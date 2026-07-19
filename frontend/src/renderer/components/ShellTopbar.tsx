@@ -7,8 +7,6 @@ import {
 	findProjectOrchestrator,
 	isOrchestratorSession,
 	sessionIsActive,
-	workerDisplayStatus,
-	type WorkerDisplayStatus,
 	type WorkspaceSession,
 } from "../types/workspace";
 import { useWorkspaceQuery, workspaceQueryKey } from "../hooks/useWorkspaceQuery";
@@ -17,8 +15,16 @@ import { spawnOrchestrator } from "../lib/spawn-orchestrator";
 import { addRendererExceptionStep, captureRendererEvent, captureRendererException } from "../lib/telemetry";
 import { useUiStore } from "../stores/ui-store";
 import { OrchestratorIcon } from "./icons";
-import { NewTaskDialog } from "./NewTaskDialog";
 import { cn } from "../lib/utils";
+import { getAgentActivityView } from "../lib/session-presentation";
+import { StatusPill } from "./StatusPill";
+import {
+	TopbarButton,
+	TopbarKillError,
+	topbarHeaderClass,
+	topbarHeaderMacClass,
+	topbarProjectLabelClass,
+} from "./TopbarButton";
 
 const isMac = typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent);
 const isLinux =
@@ -28,19 +34,6 @@ const isLinux =
 		.includes("linux");
 const dragStyle = isMac ? ({ WebkitAppRegion: "drag" } as React.CSSProperties) : undefined;
 const noDragStyle = isMac ? ({ WebkitAppRegion: "no-drag" } as React.CSSProperties) : undefined;
-
-// Session status → pill tone, mirroring agent-orchestrator's StatusBadge
-// (working=orange & breathing, input=amber, fail=red, ready=green, done=neutral).
-// Tones are theme vars so the pill tracks the light/dark status palettes.
-const STATUS_PILL: Record<WorkerDisplayStatus, { label: string; tone: string; breathe: boolean }> = {
-	working: { label: "Working", tone: "var(--orange)", breathe: true },
-	needs_you: { label: "Needs input", tone: "var(--amber)", breathe: false },
-	ci_failed: { label: "CI failed", tone: "var(--red)", breathe: false },
-	no_signal: { label: "No signal", tone: "var(--fg-muted)", breathe: false },
-	mergeable: { label: "Ready", tone: "var(--green)", breathe: false },
-	done: { label: "Done", tone: "var(--fg-muted)", breathe: false },
-	unknown: { label: "Unknown", tone: "var(--fg-muted)", breathe: false },
-};
 
 // The one app topbar (.dashboard-app-header), rendered by the shell layout
 // across the full window width — above both the sidebar and the route outlet —
@@ -61,8 +54,8 @@ export function ShellTopbar() {
 	const isInspectorOpen = useUiStore((state) => state.isInspectorOpen);
 	const toggleInspector = useUiStore((state) => state.toggleInspector);
 	const restartingProjectIds = useUiStore((state) => state.restartingProjectIds);
+	const requestNewTask = useUiStore((state) => state.requestNewTask);
 	const [isSpawning, setIsSpawning] = useState(false);
-	const [isNewTaskOpen, setIsNewTaskOpen] = useState(false);
 	const all = useWorkspaceQuery().data ?? [];
 
 	const session = params.sessionId
@@ -77,6 +70,7 @@ export function ShellTopbar() {
 	// route slug. "agent-orchestrator" is the root-board crumb only.
 	const projectId = session?.workspaceId ?? params.projectId;
 	const isProjectBoardRoute = !isSessionRoute && Boolean(projectId);
+	const isRootBoardRoute = !isSessionRoute && !isProjectBoardRoute;
 	const project = projectId ? all.find((workspace) => workspace.id === projectId) : undefined;
 	const projectLabel = project?.name ?? session?.workspaceName ?? (projectId ? "" : "agent-orchestrator");
 	const orchestrator = projectId ? findProjectOrchestrator(all, projectId) : undefined;
@@ -91,16 +85,7 @@ export function ShellTopbar() {
 
 	const openNewTask = () => {
 		if (!projectId || isProjectRestarting) return;
-		setIsNewTaskOpen(true);
-	};
-
-	const handleTaskCreated = async (sessionId: string) => {
-		if (!projectId || isProjectRestarting) return;
-		await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
-		void navigate({
-			to: "/projects/$projectId/sessions/$sessionId",
-			params: { projectId, sessionId },
-		});
+		requestNewTask(projectId);
 	};
 
 	const openOrchestrator = async () => {
@@ -141,110 +126,110 @@ export function ShellTopbar() {
 	};
 
 	return (
-		<header className={cn("dashboard-app-header", isMac && "is-under-titlebar-nav")} style={dragStyle}>
-			<div className="session-topbar__lead">
+		<header className={cn(topbarHeaderClass, isMac && topbarHeaderMacClass)} style={dragStyle}>
+			<div className="flex min-w-0 items-center gap-3">
 				{isSessionRoute && isOrchestrator ? (
-					<div className="topbar-project-pills-group">
-						<div className="topbar-project-line">
-							<span className="dashboard-app-header__project">{projectLabel}</span>
-							<span aria-hidden="true" className="topbar-identity-sep">
+					<div className="inline-flex min-w-0 items-center gap-2">
+						<div className="inline-flex min-w-0 items-center gap-1.5">
+							<span className={topbarProjectLabelClass}>{projectLabel}</span>
+							<span aria-hidden="true" className="text-xs leading-none text-passive">
 								·
 							</span>
-							<span className="session-detail-mode-badge session-detail-mode-badge--neutral">
+							<span className="inline-flex h-control-sm items-center gap-1 rounded-md border border-border bg-surface px-2 text-micro font-semibold leading-none tracking-wide-sm text-muted-foreground">
 								<OrchestratorIcon className="size-3 shrink-0" aria-hidden="true" />
 								Orchestrator
 							</span>
 						</div>
 					</div>
 				) : isSessionRoute ? (
-					<div className="session-topbar__identity">
-						<div className="session-topbar__branch">
-							<GitBranch className="h-3 w-3 shrink-0" aria-hidden="true" />
+					<div className="flex min-w-0 items-center gap-3">
+						<div className="inline-flex min-w-0 items-center gap-1 font-mono text-2xs leading-none text-passive">
+							<GitBranch className="size-icon-2xs shrink-0" aria-hidden="true" />
 							<span className="truncate">{session?.branch || `session/${session?.id ?? ""}`}</span>
 						</div>
 						{session ? <SessionStatusPill session={session} /> : null}
 					</div>
-				) : isProjectBoardRoute ? null : (
-					<div className="topbar-project-line">
-						<span className="dashboard-app-header__project">{projectLabel}</span>
+				) : isProjectBoardRoute || (isMac && isRootBoardRoute) ? null : (
+					<div className="inline-flex min-w-0 items-center gap-1.5">
+						<span className={topbarProjectLabelClass}>{projectLabel}</span>
 					</div>
 				)}
 			</div>
 
-			<div className="dashboard-app-header__spacer" />
+			<div className="min-w-0 flex-1" />
 
-			<div className="dashboard-app-header__actions">
+			<div className="flex shrink-0 items-center gap-1.5">
 				{!isLinux ? <NotificationCenter style={noDragStyle} /> : null}
 				{isSessionRoute ? (
 					<>
 						{isOrchestrator ? (
 							<>
-								<button
+								<TopbarButton
 									aria-label="New task"
-									className="dashboard-app-header__primary-btn"
 									disabled={isProjectRestarting}
 									onClick={openNewTask}
 									style={noDragStyle}
-									type="button"
+									variant="accent"
 								>
-									<Plus className="h-3.5 w-3.5" aria-hidden="true" />
+									<Plus className="size-icon-md" aria-hidden="true" />
 									New task
-								</button>
-								<button
-									aria-label="Open Kanban"
-									className="dashboard-app-header__accent-btn"
-									onClick={openBoard}
-									style={noDragStyle}
-									type="button"
-								>
-									<LayoutDashboard className="h-3.5 w-3.5" aria-hidden="true" />
+								</TopbarButton>
+								<TopbarButton aria-label="Open Kanban" onClick={openBoard} style={noDragStyle} variant="primary">
+									<LayoutDashboard className="size-icon-md" aria-hidden="true" />
 									Kanban
-								</button>
+								</TopbarButton>
 							</>
 						) : null}
 						{/* Kill control sits beside the orchestrator link for active workers —
 						    moved here from the inspector's Summary "Danger zone". */}
-						{!isOrchestrator && session && sessionIsActive(session) ? <TopbarKillButton session={session} /> : null}
+						{!isOrchestrator && session && sessionIsActive(session) ? (
+							<TopbarKillButton
+								session={session}
+								orchestratorId={orchestrator?.id}
+								onKilled={(workspaceId, orchestratorId) => {
+									if (orchestratorId) {
+										void navigate({
+											to: "/projects/$projectId/sessions/$sessionId",
+											params: { projectId: workspaceId, sessionId: orchestratorId },
+										});
+										return;
+									}
+									void navigate({ to: "/projects/$projectId", params: { projectId: workspaceId } });
+								}}
+							/>
+						) : null}
 						{!isOrchestrator && (
-							<button
+							<TopbarButton
 								aria-label="Open orchestrator"
-								className="dashboard-app-header__primary-btn dashboard-app-header__primary-btn--compact"
 								disabled={isSpawning || isProjectRestarting}
 								onClick={() => void openOrchestrator()}
 								style={noDragStyle}
-								type="button"
+								variant="primary"
 							>
-								<OrchestratorIcon className="h-3.5 w-3.5" aria-hidden="true" />
+								<OrchestratorIcon className="size-icon-md" aria-hidden="true" />
 								{isProjectRestarting ? "Restarting…" : isSpawning ? "Spawning…" : "Orchestrator"}
-							</button>
+							</TopbarButton>
 						)}
 						{/* Inspector collapse (worker sessions only — orchestrators have no rail). */}
 						{!isOrchestrator && (
-							<button
+							<TopbarButton
 								aria-label={isInspectorOpen ? "Close inspector panel" : "Open inspector panel"}
 								aria-pressed={isInspectorOpen}
-								className="dashboard-app-header__icon-btn"
 								onClick={toggleInspector}
 								style={noDragStyle}
 								title={`${isInspectorOpen ? "Close" : "Open"} inspector · ⌘⇧B`}
-								type="button"
+								variant="icon"
 							>
 								{isInspectorOpen ? (
-									<PanelRightClose className="h-[15px] w-[15px]" aria-hidden="true" />
+									<PanelRightClose className="size-icon-lg" aria-hidden="true" />
 								) : (
-									<PanelRightOpen className="h-[15px] w-[15px]" aria-hidden="true" />
+									<PanelRightOpen className="size-icon-lg" aria-hidden="true" />
 								)}
-							</button>
+							</TopbarButton>
 						)}
 					</>
 				) : null}
 			</div>
-			<NewTaskDialog
-				open={isNewTaskOpen}
-				projectId={projectId}
-				onCreated={(sessionId) => void handleTaskCreated(sessionId)}
-				onOpenChange={setIsNewTaskOpen}
-			/>
 		</header>
 	);
 }
@@ -254,7 +239,15 @@ export function ShellTopbar() {
 // button arms a one-step confirmation before firing POST /sessions/{id}/kill,
 // then invalidates the workspace query so the session drops into the board's
 // terminated group.
-export function TopbarKillButton({ session }: { session: WorkspaceSession }) {
+export function TopbarKillButton({
+	session,
+	orchestratorId,
+	onKilled,
+}: {
+	session: WorkspaceSession;
+	orchestratorId?: string;
+	onKilled: (workspaceId: string, orchestratorId?: string) => void;
+}) {
 	const queryClient = useQueryClient();
 	const [confirming, setConfirming] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -271,6 +264,7 @@ export function TopbarKillButton({ session }: { session: WorkspaceSession }) {
 			void captureRendererEvent("ao.renderer.session_kill_succeeded", { project_id: session.workspaceId });
 			setConfirming(false);
 			void queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
+			onKilled(session.workspaceId, orchestratorId);
 		},
 		onError: (e) => {
 			void captureRendererEvent("ao.renderer.session_kill_failed", { project_id: session.workspaceId });
@@ -280,70 +274,42 @@ export function TopbarKillButton({ session }: { session: WorkspaceSession }) {
 
 	if (confirming) {
 		return (
-			<div className="dashboard-app-header__kill-confirm" style={noDragStyle}>
-				<button
+			<div className="inline-flex items-center gap-1.5" style={noDragStyle}>
+				<TopbarButton
 					aria-label="Confirm kill"
-					className="dashboard-app-header__kill-confirm-btn"
 					disabled={kill.isPending}
 					onClick={() => kill.mutate()}
-					type="button"
+					variant="killConfirm"
 				>
-					<Square className="h-3.5 w-3.5" aria-hidden="true" />
+					<Square className="size-icon-md" aria-hidden="true" />
 					{kill.isPending ? "Killing…" : "Confirm kill"}
-				</button>
-				<button
-					className="dashboard-app-header__kill-cancel-btn"
-					disabled={kill.isPending}
-					onClick={() => setConfirming(false)}
-					type="button"
-				>
+				</TopbarButton>
+				<TopbarButton disabled={kill.isPending} onClick={() => setConfirming(false)} variant="killCancel">
 					Cancel
-				</button>
-				{error ? (
-					<span className="dashboard-app-header__kill-error" role="alert">
-						{error}
-					</span>
-				) : null}
+				</TopbarButton>
+				{error ? <TopbarKillError>{error}</TopbarKillError> : null}
 			</div>
 		);
 	}
 
 	return (
-		<button
+		<TopbarButton
 			aria-label="Kill session"
-			className="dashboard-app-header__kill-btn"
 			onClick={() => {
 				setError(null);
 				setConfirming(true);
 			}}
 			style={noDragStyle}
 			title="Kill session"
-			type="button"
+			variant="kill"
 		>
-			<Trash2 className="h-[13px] w-[13px]" aria-hidden="true" />
+			<Trash2 className="size-icon-sm" aria-hidden="true" />
 			Kill
-		</button>
+		</TopbarButton>
 	);
 }
 
-// StatusBadge --pill: tinted bordered pill (inset 25%-tone hairline + 7%-tone
-// fill) with a 6px dot that breathes while the agent is working.
 function SessionStatusPill({ session }: { session: WorkspaceSession }) {
-	const { label, tone, breathe } = STATUS_PILL[workerDisplayStatus(session)];
-	return (
-		<span
-			className="inline-flex shrink-0 items-center gap-[7px] whitespace-nowrap rounded-[7px] px-[11px] py-[5px] text-[11.5px] font-semibold leading-none"
-			style={{
-				color: tone,
-				background: `color-mix(in srgb, ${tone} 7%, transparent)`,
-				boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${tone} 25%, transparent)`,
-			}}
-		>
-			<span
-				className={cn("h-1.5 w-1.5 rounded-full", breathe && "animate-status-pulse")}
-				style={{ background: tone }}
-			/>
-			{label}
-		</span>
-	);
+	const { label, tone, breathe } = getAgentActivityView(session.activity);
+	return <StatusPill label={label} tone={tone} breathe={breathe} leading="none" />;
 }

@@ -1,6 +1,9 @@
 import { create } from "zustand";
+import { resolveTheme, themeStorageKey, type Theme } from "../lib/theme";
 
-export type Theme = "light" | "dark";
+export type { Theme } from "../lib/theme";
+export { readStoredTheme } from "../lib/theme";
+
 /** Worker detail view toggles — Changes (Git rail) is the default. */
 export type WorkbenchTab = "changes" | "files" | "terminal";
 
@@ -16,6 +19,14 @@ type UiState = {
 	restartingProjectIds: ReadonlySet<string>;
 	orchestratorReplacementErrors: Record<string, string>;
 	orchestratorStartupErrors: Record<string, string>;
+	// Transient "open the New Task dialog for this project" signal. The nonce
+	// bumps on every request so a repeat press (even for the same project) still
+	// re-fires; the always-mounted GlobalNewTaskDialog consumes it. Selection
+	// still lives in the URL — this is a one-shot action, not persisted state.
+	newTaskRequest: { projectId: string; nonce: number } | null;
+	// Bumps to ask the sidebar's create-project flow to open (the ⌘N fallback
+	// when no project is in scope).
+	createProjectNonce: number;
 	setWorkbenchTab: (tab: WorkbenchTab) => void;
 	setTheme: (theme: Theme) => void;
 	toggleTheme: () => void;
@@ -24,11 +35,12 @@ type UiState = {
 	setProjectRestarting: (projectId: string, restarting: boolean) => void;
 	setOrchestratorReplacementError: (projectId: string, message: string | null) => void;
 	setOrchestratorStartupError: (projectId: string, message: string | null) => void;
+	requestNewTask: (projectId: string) => void;
+	requestCreateProject: () => void;
 };
 
 const sidebarStorageKey = "ao.sidebar.open";
 const inspectorStorageKey = "ao.inspector.open";
-const themeStorageKey = "ao.theme";
 
 function getLocalStorage() {
 	if (typeof window === "undefined" || !window.localStorage) return null;
@@ -43,30 +55,16 @@ function initialInspectorOpen() {
 	return getLocalStorage()?.getItem(inspectorStorageKey) !== "false";
 }
 
-function systemTheme(): Theme {
-	if (typeof window === "undefined") return "dark";
-	return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-}
-
-function initialTheme(): Theme {
-	const stored = getLocalStorage()?.getItem(themeStorageKey);
-	if (stored === "light" || stored === "dark") return stored;
-	return systemTheme();
-}
-
-export function readStoredTheme(): Theme | null {
-	const stored = getLocalStorage()?.getItem(themeStorageKey);
-	return stored === "light" || stored === "dark" ? stored : null;
-}
-
 export const useUiStore = create<UiState>((set) => ({
 	workbenchTab: "changes",
 	isSidebarOpen: initialSidebarOpen(),
 	isInspectorOpen: initialInspectorOpen(),
-	theme: initialTheme(),
+	theme: resolveTheme(),
 	restartingProjectIds: new Set<string>(),
 	orchestratorReplacementErrors: {},
 	orchestratorStartupErrors: {},
+	newTaskRequest: null,
+	createProjectNonce: 0,
 	setWorkbenchTab: (workbenchTab) => set({ workbenchTab }),
 	setTheme: (theme) => {
 		getLocalStorage()?.setItem(themeStorageKey, theme);
@@ -120,4 +118,7 @@ export const useUiStore = create<UiState>((set) => ({
 			}
 			return { orchestratorStartupErrors };
 		}),
+	requestNewTask: (projectId) =>
+		set((state) => ({ newTaskRequest: { projectId, nonce: (state.newTaskRequest?.nonce ?? 0) + 1 } })),
+	requestCreateProject: () => set((state) => ({ createProjectNonce: state.createProjectNonce + 1 })),
 }));

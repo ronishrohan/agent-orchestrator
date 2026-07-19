@@ -107,6 +107,14 @@ func (f *fakeSessionService) ClaimPR(context.Context, domain.SessionID, string, 
 	return sessionsvc.ClaimPRResult{}, nil
 }
 
+func (f *fakeSessionService) ListWorkspaceFiles(context.Context, domain.SessionID) (sessionsvc.WorkspaceFiles, error) {
+	return sessionsvc.WorkspaceFiles{}, nil
+}
+
+func (f *fakeSessionService) GetWorkspaceFile(context.Context, domain.SessionID, string) (sessionsvc.WorkspaceFileDetail, error) {
+	return sessionsvc.WorkspaceFileDetail{}, nil
+}
+
 type fakeAgentCatalog struct{}
 
 var _ controllers.AgentCatalog = (*fakeAgentCatalog)(nil)
@@ -158,6 +166,10 @@ func (f *fakeProjectManager) Add(_ context.Context, in projectsvc.AddInput) (pro
 		id = domain.ProjectID(*in.ProjectID)
 	}
 	return projectsvc.Project{ID: id, Path: in.Path}, nil
+}
+
+func (f *fakeProjectManager) InitializeRepository(_ context.Context, in projectsvc.InitializeRepositoryInput) (projectsvc.InitializeRepositoryResult, error) {
+	return projectsvc.InitializeRepositoryResult(in), nil
 }
 
 func (f *fakeProjectManager) SetConfig(_ context.Context, id domain.ProjectID, in projectsvc.SetConfigInput) (projectsvc.Project, error) {

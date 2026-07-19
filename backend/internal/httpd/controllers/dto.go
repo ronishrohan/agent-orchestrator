@@ -119,6 +119,11 @@ type CleanupSessionsQuery struct {
 	Project string `query:"project,omitempty" description:"Project id filter. When omitted, clean terminated sessions across all projects."`
 }
 
+// WorkspaceFileQuery is the query string accepted by GET /api/v1/sessions/{sessionId}/workspace/file.
+type WorkspaceFileQuery struct {
+	Path string `query:"path" description:"Session-worktree-relative file path."`
+}
+
 // SessionView is the session wire shape: the domain read model plus the
 // display-safe branch name and the session's attributed pull requests in the
 // curated SessionPRFacts shape. One session can own many PRs (e.g. a stack), so
@@ -161,6 +166,39 @@ type SpawnSessionRequest struct {
 // SessionResponse is the { session } body shared by session create/get.
 type SessionResponse struct {
 	Session SessionView `json:"session"`
+}
+
+// ListWorkspaceFilesResponse is the body of GET /api/v1/sessions/{sessionId}/workspace/files.
+type ListWorkspaceFilesResponse struct {
+	SessionID domain.SessionID       `json:"sessionId"`
+	Files     []WorkspaceFileSummary `json:"files"`
+	Truncated bool                   `json:"truncated"`
+}
+
+// WorkspaceFileSummary is one file row in the session workspace browser.
+type WorkspaceFileSummary struct {
+	Path      string                         `json:"path"`
+	Status    sessionsvc.WorkspaceFileStatus `json:"status" enum:"unmodified,modified,added,deleted,renamed"`
+	Additions int                            `json:"additions"`
+	Deletions int                            `json:"deletions"`
+	Size      int64                          `json:"size"`
+	Binary    bool                           `json:"binary"`
+}
+
+// WorkspaceFileResponse is the body of GET /api/v1/sessions/{sessionId}/workspace/file.
+type WorkspaceFileResponse struct {
+	SessionID        domain.SessionID               `json:"sessionId"`
+	Path             string                         `json:"path"`
+	Status           sessionsvc.WorkspaceFileStatus `json:"status" enum:"unmodified,modified,added,deleted,renamed"`
+	Additions        int                            `json:"additions"`
+	Deletions        int                            `json:"deletions"`
+	Size             int64                          `json:"size"`
+	Binary           bool                           `json:"binary"`
+	Deleted          bool                           `json:"deleted"`
+	Content          string                         `json:"content"`
+	ContentTruncated bool                           `json:"contentTruncated"`
+	Diff             string                         `json:"diff"`
+	DiffTruncated    bool                           `json:"diffTruncated"`
 }
 
 // SessionPreviewResponse is the body of GET /api/v1/sessions/{sessionId}/preview.
@@ -407,8 +445,19 @@ type ClaimPRResponse struct {
 }
 
 // SetActivityRequest is the body of POST /api/v1/sessions/{sessionId}/activity.
+// Event/ToolName/ToolUseID are optional correlation facts: which AO hook
+// sub-command produced the state and, for tool-use hooks, which tool call it
+// concerns. Lifecycle uses them to clear a stale blocked state only when the
+// specific approved tool finishes. Absent on old CLIs and on adapters whose
+// payloads carry no tool identity — the signal then keeps its plain
+// state-only semantics.
+// AgentSessionID may arrive without State on metadata-only SessionStart hooks.
 type SetActivityRequest struct {
-	State string `json:"state" enum:"active,idle,waiting_input,exited" description:"Agent activity state reported by an agent hook."`
+	State          string `json:"state,omitempty" enum:"active,idle,waiting_input,blocked,exited" description:"Agent activity state reported by an agent hook. Optional for metadata-only hooks."`
+	Event          string `json:"event,omitempty" description:"AO hook sub-command that produced this state (e.g. post-tool-use)."`
+	ToolName       string `json:"toolName,omitempty" description:"Native tool name, for tool-use hook events."`
+	ToolUseID      string `json:"toolUseId,omitempty" description:"Native tool-use id, for tool-use hook events."`
+	AgentSessionID string `json:"agentSessionId,omitempty" description:"Native agent session identifier used to resume its transcript."`
 }
 
 // SetActivityResponse is the body of POST /api/v1/sessions/{sessionId}/activity.
@@ -544,4 +593,15 @@ type ResolveCommentsRequest struct {
 type ResolveCommentsResponse struct {
 	OK       bool `json:"ok"`
 	Resolved int  `json:"resolved"`
+}
+
+// MobileStatusResponse is the body of the Connect Mobile status/enable/disable/
+// regenerate endpoints. Password is populated only transiently, on enable and
+// regenerate responses (empty otherwise) — it is never persisted in plaintext.
+type MobileStatusResponse struct {
+	Enabled  bool   `json:"enabled"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Password string `json:"password"`
+	Warning  string `json:"warning"`
 }

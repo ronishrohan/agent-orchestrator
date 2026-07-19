@@ -1,23 +1,27 @@
-import { createFileRoute, Outlet, useMatchRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useMatchRoute, useNavigate, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { type CSSProperties, useCallback, useEffect, useRef } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { NotificationRuntime } from "../components/NotificationCenter";
+import { GlobalNewTaskDialog } from "../components/GlobalNewTaskDialog";
+import { KeyboardShortcutsDialog } from "../components/KeyboardShortcutsDialog";
 import { ShellTopbar } from "../components/ShellTopbar";
 import { OrchestratorReplacementDialog } from "../components/OrchestratorReplacementDialog";
 import { Sidebar } from "../components/Sidebar";
 import { SidebarProvider } from "../components/ui/sidebar";
 import { TitlebarNav } from "../components/TitlebarNav";
+import { WindowTitlebar } from "../components/WindowTitlebar";
 import { agentsQueryKey, agentsQueryOptions, refreshAgents } from "../hooks/useAgentsQuery";
 import { useDaemonStatus } from "../hooks/useDaemonStatus";
 import { useWorkspaceQuery, workspaceQueryKey, workspaceQueryOptions } from "../hooks/useWorkspaceQuery";
-import { apiClient, apiErrorMessage } from "../lib/api-client";
+import { apiClient, apiErrorCode, apiErrorMessage } from "../lib/api-client";
 import { refreshDaemonStatus } from "../lib/daemon-status";
 import { addRendererExceptionStep, captureRendererEvent, captureRendererException } from "../lib/telemetry";
 import { ShellProvider } from "../lib/shell-context";
-import { spawnOrchestrator } from "../lib/spawn-orchestrator";
 import { restartProjectOrchestrator } from "../lib/restart-orchestrator";
 import { captureOrchestratorReplacementFailure } from "../lib/orchestrator-replacement-telemetry";
-import { readStoredTheme, type Theme, useUiStore } from "../stores/ui-store";
+import { applyDocumentTheme, readStoredTheme, systemTheme } from "../lib/theme";
+import { aoBridge } from "../lib/bridge";
+import { useUiStore } from "../stores/ui-store";
 import type { WorkspaceSummary } from "../types/workspace";
 import type { components } from "../../api/schema";
 
@@ -32,12 +36,22 @@ export const Route = createFileRoute("/_shell")({
 	component: ShellLayout,
 });
 
-function systemTheme(): Theme {
-	return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-}
-
 function errorMessage(error: unknown) {
 	return error instanceof Error ? error.message : "Could not load projects";
+}
+
+type CreateProjectConfigInput = {
+	workerAgent: string;
+	orchestratorAgent: string;
+	trackerIntake?: components["schemas"]["TrackerIntakeConfig"];
+};
+
+export function createProjectConfig(input: CreateProjectConfigInput): components["schemas"]["ProjectConfig"] {
+	return {
+		worker: { agent: input.workerAgent as components["schemas"]["RoleOverride"]["agent"] },
+		orchestrator: { agent: input.orchestratorAgent as components["schemas"]["RoleOverride"]["agent"] },
+		...(input.trackerIntake ? { trackerIntake: input.trackerIntake } : {}),
+	};
 }
 
 const isLinux =
@@ -59,6 +73,18 @@ function ShellLayout() {
 	const daemonStatus = useDaemonStatus(queryClient);
 	const agentCatalogPortRef = useRef<number | undefined>(undefined);
 	const { theme, setTheme, isSidebarOpen, toggleSidebar } = useUiStore();
+	const requestNewTask = useUiStore((state) => state.requestNewTask);
+	const requestCreateProject = useUiStore((state) => state.requestCreateProject);
+	const [isKeyboardShortcutsOpen, setIsKeyboardShortcutsOpen] = useState(false);
+	const routeParams = useParams({ strict: false }) as { projectId?: string; sessionId?: string };
+	// Project in scope for a new-session shortcut: the route's project, or the
+	// workspace owning the open session (so the shortcut works from a worker's
+	// detail view, where the URL carries only a sessionId).
+	const scopedProjectId = routeParams.projectId
+		? routeParams.projectId
+		: routeParams.sessionId
+			? workspaces.find((workspace) => workspace.sessions.some((session) => session.id === routeParams.sessionId))?.id
+			: undefined;
 	const isSessionRoute =
 		Boolean(matchRoute({ to: "/projects/$projectId/sessions/$sessionId", fuzzy: true })) ||
 		Boolean(matchRoute({ to: "/sessions/$sessionId", fuzzy: true }));
@@ -97,15 +123,12 @@ function ShellLayout() {
 				body: {
 					path: input.path,
 					asWorkspace: input.asWorkspace || undefined,
-					config: {
-						worker: { agent: input.workerAgent },
-						orchestrator: { agent: input.orchestratorAgent },
-						trackerIntake: input.trackerIntake,
-					},
+					config: createProjectConfig(input),
 				},
 			});
 			if (error) {
-				const failure = new Error(apiErrorMessage(error));
+				const failure = new Error(apiErrorMessage(error)) as Error & { code?: string };
+				failure.code = apiErrorCode(error);
 				void captureRendererException(failure, {
 					source: "project-add",
 					operation: "project_add",
@@ -129,13 +152,42 @@ function ShellLayout() {
 			updateWorkspaces((current) => [workspace, ...current.filter((item) => item.id !== workspace.id)]);
 			setOrchestratorStartupError(workspace.id, null);
 			try {
-				const sessionId = await spawnOrchestrator(workspace.id, "project_add");
+				void captureRendererEvent("ao.renderer.orchestrator_spawn_requested", {
+					project_id: workspace.id,
+					source: "project_add",
+				});
+				const {
+					data: spawnData,
+					error: spawnError,
+					response: spawnResponse,
+				} = await apiClient.POST("/api/v1/sessions", {
+					body: {
+						projectId: workspace.id,
+						kind: "orchestrator",
+						harness: input.orchestratorAgent as components["schemas"]["SpawnSessionRequest"]["harness"],
+					},
+				});
+				if (spawnError || !spawnData?.session?.id) {
+					const message = spawnError
+						? apiErrorMessage(spawnError, `Failed to spawn orchestrator (${spawnResponse.status})`)
+						: `Failed to spawn orchestrator (${spawnResponse.status})`;
+					throw new Error(message);
+				}
+				void captureRendererEvent("ao.renderer.orchestrator_spawn_succeeded", {
+					project_id: workspace.id,
+					source: "project_add",
+				});
+				const sessionId = spawnData.session.id;
 				await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
 				void navigate({
 					to: "/projects/$projectId/sessions/$sessionId",
 					params: { projectId: workspace.id, sessionId },
 				});
 			} catch (spawnError) {
+				void captureRendererEvent("ao.renderer.orchestrator_spawn_failed", {
+					project_id: workspace.id,
+					source: "project_add",
+				});
 				void navigate({ to: "/projects/$projectId", params: { projectId: workspace.id } });
 				const message = spawnError instanceof Error ? spawnError.message : "Could not start orchestrator";
 				const startupMessage = `Project added, but orchestrator did not start: ${message}`;
@@ -144,6 +196,17 @@ function ShellLayout() {
 		},
 		[navigate, queryClient, setOrchestratorStartupError, updateWorkspaces],
 	);
+
+	const initializeProjectRepository = useCallback(async (path: string) => {
+		const { error } = await apiClient.POST("/api/v1/projects/initialize", {
+			body: { path },
+		});
+		if (error) {
+			const failure = new Error(apiErrorMessage(error)) as Error & { code?: string };
+			failure.code = apiErrorCode(error);
+			throw failure;
+		}
+	}, []);
 
 	const removeProject = useCallback(
 		async (projectId: string) => {
@@ -157,7 +220,8 @@ function ShellLayout() {
 				params: { path: { id: projectId } },
 			});
 			if (error) {
-				const failure = new Error(apiErrorMessage(error));
+				const failure = new Error(apiErrorMessage(error)) as Error & { code?: string };
+				failure.code = apiErrorCode(error);
 				void captureRendererException(failure, {
 					source: "project-remove",
 					operation: "project_remove",
@@ -189,8 +253,7 @@ function ShellLayout() {
 	);
 
 	useEffect(() => {
-		document.documentElement.dataset.theme = theme;
-		document.documentElement.style.colorScheme = theme;
+		applyDocumentTheme(theme);
 	}, [theme]);
 
 	useEffect(() => {
@@ -229,9 +292,29 @@ function ShellLayout() {
 		return () => window.removeEventListener("keydown", handleKeyDown);
 	}, [navigate, workspaces]);
 
+	// New session (⌘N / Ctrl+Shift+N) is detected in the main process and
+	// delivered here, so it fires even when focus is inside xterm or a native
+	// Browser-preview view. The shell owns the routing: open the New Task flow
+	// for the in-scope project, else fall back to create-project.
+	useEffect(
+		() =>
+			aoBridge.app.onNewSessionShortcut(() => {
+				if (scopedProjectId) {
+					requestNewTask(scopedProjectId);
+				} else {
+					requestCreateProject();
+				}
+			}),
+		[scopedProjectId, requestNewTask, requestCreateProject],
+	);
+
+	useEffect(() => aoBridge.app.onKeyboardShortcutsHelp(() => setIsKeyboardShortcutsOpen(true)), []);
+
 	return (
-		<ShellProvider value={{ daemonStatus, createProject }}>
+		<ShellProvider value={{ daemonStatus, createProject, initializeProjectRepository }}>
 			<NotificationRuntime />
+			<GlobalNewTaskDialog />
+			<KeyboardShortcutsDialog open={isKeyboardShortcutsOpen} onOpenChange={setIsKeyboardShortcutsOpen} />
 			{/* The topbar spans the full window width above the sidebar row (the
           macOS traffic lights + TitlebarNav cluster sit in its left inset),
           and the sidebar hangs below it — so the sidebar border stops at the
@@ -239,26 +322,35 @@ function ShellLayout() {
           in the layout, not the screens, so the crumb and actions never shift
           when the outlet content swaps. */}
 			<div className="flex h-screen min-h-0 flex-col bg-background text-foreground">
+				{/* Windows-only custom title bar (logo + File/Edit/View/… menu); paints
+            the chrome the frameless window drops. Renders null on macOS/Linux. */}
+				<WindowTitlebar />
 				<ShellTopbar />
 				{/* Controlled by the ui-store so TitlebarNav / Topbar toggles (which
             call the store directly) stay in sync. --sidebar-width chains to
             the drag-resizable --ao-sidebar-w set on :root by useResizable. */}
 				<SidebarProvider
-					className="min-h-0 flex-1"
+					className="min-h-0 flex-1 overflow-x-hidden"
 					onOpenChange={(open) => open !== isSidebarOpen && toggleSidebar()}
 					open={isSidebarOpen}
-					style={{ "--sidebar-width": "var(--ao-sidebar-w, 240px)", "--sidebar-width-icon": "48px" } as CSSProperties}
+					style={
+						{
+							"--sidebar-width": "var(--ao-sidebar-w, var(--size-sidebar-default))",
+							"--sidebar-width-icon": "var(--size-sidebar-icon)",
+						} as CSSProperties
+					}
 				>
 					<Sidebar
 						daemonStatus={daemonStatus}
 						underTopbar={isLinux ? isSessionRoute : true}
 						onCreateProject={createProject}
+						onInitializeProject={initializeProjectRepository}
 						onRemoveProject={removeProject}
 						workspaceError={workspaceQuery.isError ? errorMessage(workspaceQuery.error) : undefined}
 						workspaces={workspaces}
 					/>
-					<main className="flex min-w-0 flex-1 flex-col">
-						<div className="min-h-0 flex-1">
+					<main className="flex min-w-0 flex-1 flex-col overflow-x-hidden">
+						<div className="min-h-0 flex-1 overflow-x-hidden">
 							<Outlet />
 						</div>
 					</main>

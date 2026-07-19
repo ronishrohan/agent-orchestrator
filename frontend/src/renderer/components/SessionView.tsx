@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { PanelImperativeHandle, PanelSize } from "react-resizable-panels";
-import { BrowserPanelView } from "./BrowserPanel";
+import { BrowserPanelView, useBrowserAnnotationQueue } from "./BrowserPanel";
 import { CenterPane } from "./CenterPane";
+import { SessionFilesView } from "./SessionFilesView";
 import { SessionInspector, type InspectorView } from "./SessionInspector";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./ui/resizable";
 import { useUiStore } from "../stores/ui-store";
@@ -48,6 +49,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
 	const inspectorSeparatorRef = useRef<HTMLDivElement | null>(null);
 	const [terminalTarget, setTerminalTarget] = useState<TerminalTarget>({ kind: "worker" });
 	const [browserPoppedOut, setBrowserPoppedOut] = useState(false);
+	const [filesPoppedOut, setFilesPoppedOut] = useState(false);
 	const [inspectorView, setInspectorView] = useState<InspectorView>("summary");
 
 	const session = workspaces.flatMap((workspace) => workspace.sessions).find((s) => s.id === sessionId);
@@ -65,13 +67,40 @@ export function SessionView({ sessionId }: SessionViewProps) {
 		previewUrl,
 		previewRevision,
 	});
+	const browserAnnotationQueue = useBrowserAnnotationQueue({
+		sessionId: session?.id,
+		navUrl: browserView.navState.url,
+	});
 
 	useEffect(() => {
 		setTerminalTarget({ kind: "worker" });
 		setBrowserPoppedOut(false);
+		setFilesPoppedOut(false);
 		setInspectorView("summary");
 		revealedPreviewRef.current = null;
 	}, [sessionId]);
+
+	const handleOpenFiles = useCallback(() => {
+		setBrowserPoppedOut(false);
+		setFilesPoppedOut(false);
+		setInspectorView("files");
+		if (!useUiStore.getState().isInspectorOpen) toggleInspector();
+	}, [toggleInspector]);
+
+	const handleToggleFilesPopOut = useCallback(
+		(next: boolean) => {
+			if (next) setBrowserPoppedOut(false);
+			setFilesPoppedOut(next);
+			setInspectorView("files");
+			if (!useUiStore.getState().isInspectorOpen) toggleInspector();
+		},
+		[toggleInspector],
+	);
+
+	const handleToggleBrowserPopOut = useCallback((next: boolean) => {
+		if (next) setFilesPoppedOut(false);
+		setBrowserPoppedOut(next);
+	}, []);
 
 	// `ao preview` sets session.previewUrl (streamed over CDC); surface the result
 	// in the inspector rail's Browser tab (opening the rail if collapsed), not the
@@ -171,14 +200,14 @@ export function SessionView({ sessionId }: SessionViewProps) {
 
 	if (!session && !workspaceQuery.isLoading) {
 		return (
-			<div className="grid h-full place-items-center bg-background p-6 text-center font-mono text-[12px] text-passive">
+			<div className="grid h-full place-items-center bg-background p-6 text-center font-mono text-xs text-passive">
 				Session not found. It may have been cleaned up — pick another from the sidebar.
 			</div>
 		);
 	}
 
 	return (
-		<div className="flex h-full min-h-0 flex-col bg-background text-foreground">
+		<div className="relative flex h-full min-h-0 flex-col bg-background text-foreground">
 			<ResizablePanelGroup className="session-split min-h-0 flex-1" id="session-workspace" orientation="horizontal">
 				{/* react-resizable-panels v4: bare numbers are PIXELS; percentages must
             be strings. Numeric sizes here once clamped the inspector to 45px. */}
@@ -194,7 +223,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
 				{hasInspector ? (
 					<>
 						<ResizableHandle
-							className="session-inspector__resize-handle focus-visible:ring-0 focus-visible:ring-offset-0"
+							className="w-1.75 cursor-col-resize touch-none bg-transparent after:w-px after:bg-border-strong hover:after:bg-border focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:after:bg-border data-[separator=active]:after:bg-border"
 							elementRef={inspectorSeparatorRef}
 						/>
 						<ResizablePanel
@@ -211,14 +240,25 @@ export function SessionView({ sessionId }: SessionViewProps) {
 						>
 							{/* Stable content width while the panel animates (yyork pattern):
                   the pane clips instead of reflowing the inspector mid-collapse. */}
-							<div className="h-full min-w-[280px]">
+							<div className="h-full min-w-inspector-min">
 								<SessionInspector
+									browserAnnotationQueue={browserAnnotationQueue}
 									browserPoppedOut={browserPoppedOut}
+									filesView={
+										session ? (
+											<SessionFilesView
+												onClose={() => setInspectorView("summary")}
+												onToggleMaximized={handleToggleFilesPopOut}
+												sessionId={session.id}
+											/>
+										) : null
+									}
 									isInspectorVisible={isInspectorOpen}
+									onOpenFiles={handleOpenFiles}
 									onOpenReviewerTerminal={({ handleId, harness }) =>
 										setTerminalTarget({ kind: "reviewer", handleId, harness })
 									}
-									onToggleBrowserPopOut={setBrowserPoppedOut}
+									onToggleBrowserPopOut={handleToggleBrowserPopOut}
 									onViewChange={setInspectorView}
 									view={inspectorView}
 									browserView={browserView}
@@ -229,18 +269,32 @@ export function SessionView({ sessionId }: SessionViewProps) {
 					</>
 				) : null}
 			</ResizablePanelGroup>
-			{/* Maximized browser: a fixed overlay across the whole app window,
+			{filesPoppedOut && session ? (
+				<div className="absolute inset-0 z-30 bg-background">
+					<SessionFilesView
+						isMaximized
+						onClose={() => {
+							setFilesPoppedOut(false);
+							setInspectorView("summary");
+						}}
+						onToggleMaximized={handleToggleFilesPopOut}
+						sessionId={session.id}
+					/>
+				</div>
+			) : null}
+			{/* Maximized browser: a fixed overlay across the app workspace,
           portaled to <body> so it escapes the shell layout (covering the
           sidebar + topbar, not just the session area) and sits outside any
           `[data-panel]` column, so the native WebContentsView is not clamped
-          and fills the entire window. */}
+          and fills the window below any native titlebar overlay. */}
 			{browserPoppedOut && session
 				? createPortal(
 						<div className="browser-popout-overlay">
 							<BrowserPanelView
 								active
+								annotationQueue={browserAnnotationQueue}
 								browserView={browserView}
-								onTogglePopOut={setBrowserPoppedOut}
+								onTogglePopOut={handleToggleBrowserPopOut}
 								poppedOut
 								session={session}
 							/>

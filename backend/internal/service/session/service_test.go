@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +45,55 @@ func newFakeStore() *fakeStore {
 		reviews:  map[string][]domain.PullRequestReview{},
 		threads:  map[string][]domain.PullRequestReviewThread{},
 		comments: map[string][]domain.PullRequestComment{},
+	}
+}
+
+func newWorkspaceRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	runGit(t, dir, "init")
+	runGit(t, dir, "config", "user.email", "ao@example.com")
+	runGit(t, dir, "config", "user.name", "AO Tests")
+	writeWorkspaceFile(t, dir, ".gitignore", "node_modules/\n")
+	writeWorkspaceFile(t, dir, "README.md", "hello\n")
+	writeWorkspaceFile(t, dir, "src/app.go", "package main\n")
+	runGit(t, dir, "add", ".")
+	runGit(t, dir, "commit", "-m", "initial")
+	return dir
+}
+
+func runGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git -C %s %s: %v\n%s", dir, strings.Join(args, " "), err, out)
+	}
+	return string(out)
+}
+
+func writeWorkspaceFile(t *testing.T, root, rel, content string) {
+	t.Helper()
+	path := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+func linkWorkspaceDir(t *testing.T, target, link string) {
+	t.Helper()
+	if err := os.Symlink(target, link); err == nil {
+		return
+	} else if runtime.GOOS != "windows" {
+		t.Skipf("creating symlink: %v", err)
+	} else {
+		cmd := exec.Command("cmd", "/c", "mklink", "/J", link, target)
+		if out, junctionErr := cmd.CombinedOutput(); junctionErr != nil {
+			t.Skipf("creating symlink or junction: symlink: %v; junction: %v\n%s", err, junctionErr, out)
+		}
 	}
 }
 
@@ -188,6 +241,97 @@ func TestSessionSetPreviewUnknownSession(t *testing.T) {
 	}
 }
 
+func TestListWorkspaceFilesReturnsTrackedAndUntrackedStatus(t *testing.T) {
+	repo := newWorkspaceRepo(t)
+	writeWorkspaceFile(t, repo, "README.md", "goodbye\nupdated\n")
+	if err := os.Remove(filepath.Join(repo, "src", "app.go")); err != nil {
+		t.Fatal(err)
+	}
+	writeWorkspaceFile(t, repo, "notes.txt", "agent note\n")
+	writeWorkspaceFile(t, repo, "node_modules/cache.txt", "ignored\n")
+	st := newFakeStore()
+	st.sessions["ao-1"] = domain.SessionRecord{
+		ID:       "ao-1",
+		Metadata: domain.SessionMetadata{WorkspacePath: repo},
+		Activity: domain.Activity{State: domain.ActivityActive},
+	}
+
+	got, err := (&Service{store: st}).ListWorkspaceFiles(context.Background(), "ao-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byPath := map[string]WorkspaceFileSummary{}
+	for _, file := range got.Files {
+		byPath[file.Path] = file
+	}
+	if got.SessionID != "ao-1" {
+		t.Fatalf("session id = %q, want ao-1", got.SessionID)
+	}
+	if byPath["README.md"].Status != WorkspaceFileModified {
+		t.Fatalf("README status = %q, want modified", byPath["README.md"].Status)
+	}
+	if byPath["src/app.go"].Status != WorkspaceFileDeleted {
+		t.Fatalf("src/app.go status = %q, want deleted", byPath["src/app.go"].Status)
+	}
+	if byPath["notes.txt"].Status != WorkspaceFileAdded {
+		t.Fatalf("notes.txt status = %q, want added", byPath["notes.txt"].Status)
+	}
+	if _, ok := byPath["node_modules/cache.txt"]; ok {
+		t.Fatal("ignored file was listed")
+	}
+	if byPath["README.md"].Additions == 0 || byPath["README.md"].Deletions == 0 {
+		t.Fatalf("README counts = +%d -%d, want non-zero diff counts", byPath["README.md"].Additions, byPath["README.md"].Deletions)
+	}
+}
+
+func TestGetWorkspaceFileReturnsContentAndDiff(t *testing.T) {
+	repo := newWorkspaceRepo(t)
+	writeWorkspaceFile(t, repo, "README.md", "goodbye\nupdated\n")
+	st := newFakeStore()
+	st.sessions["ao-1"] = domain.SessionRecord{ID: "ao-1", Metadata: domain.SessionMetadata{WorkspacePath: repo}}
+
+	got, err := (&Service{store: st}).GetWorkspaceFile(context.Background(), "ao-1", "README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Path != "README.md" {
+		t.Fatalf("path = %q, want README.md", got.Path)
+	}
+	if got.Content != "goodbye\nupdated\n" {
+		t.Fatalf("content = %q", got.Content)
+	}
+	if !strings.Contains(got.Diff, "-hello") || !strings.Contains(got.Diff, "+updated") {
+		t.Fatalf("diff did not include expected old/new lines:\n%s", got.Diff)
+	}
+}
+
+func TestGetWorkspaceFileRejectsTraversal(t *testing.T) {
+	repo := newWorkspaceRepo(t)
+	st := newFakeStore()
+	st.sessions["ao-1"] = domain.SessionRecord{ID: "ao-1", Metadata: domain.SessionMetadata{WorkspacePath: repo}}
+
+	_, err := (&Service{store: st}).GetWorkspaceFile(context.Background(), "ao-1", "../secrets.txt")
+	var e *apierr.Error
+	if !errors.As(err, &e) || e.Kind != apierr.KindInvalid || e.Code != "INVALID_WORKSPACE_PATH" {
+		t.Fatalf("err = %v, want bad request INVALID_WORKSPACE_PATH", err)
+	}
+}
+
+func TestGetWorkspaceFileRejectsIntermediateSymlinkEscape(t *testing.T) {
+	repo := newWorkspaceRepo(t)
+	outside := t.TempDir()
+	writeWorkspaceFile(t, outside, "secret.txt", "outside workspace\n")
+	linkWorkspaceDir(t, outside, filepath.Join(repo, "link"))
+	st := newFakeStore()
+	st.sessions["ao-1"] = domain.SessionRecord{ID: "ao-1", Metadata: domain.SessionMetadata{WorkspacePath: repo}}
+
+	_, err := (&Service{store: st}).GetWorkspaceFile(context.Background(), "ao-1", "link/secret.txt")
+	var e *apierr.Error
+	if !errors.As(err, &e) || e.Kind != apierr.KindInvalid || e.Code != "INVALID_WORKSPACE_PATH" {
+		t.Fatalf("err = %v, want bad request INVALID_WORKSPACE_PATH", err)
+	}
+}
+
 func TestSessionRenameMissingSessionReturnsNotFound(t *testing.T) {
 	st := newFakeStore()
 
@@ -212,6 +356,7 @@ type fakeCommander struct {
 	spawnErr        error
 	spawnRecord     domain.SessionRecord
 	spawned         bool
+	spawnedCfg      ports.SpawnConfig
 	killsAtSpawn    int
 }
 
@@ -220,6 +365,7 @@ func (f *fakeCommander) Spawn(_ context.Context, cfg ports.SpawnConfig) (domain.
 		return domain.SessionRecord{}, f.spawnErr
 	}
 	f.spawned = true
+	f.spawnedCfg = cfg
 	f.killsAtSpawn = len(f.retired)
 	if f.spawnRecord.ID != "" {
 		return f.spawnRecord, nil
@@ -412,6 +558,121 @@ func TestSpawnEmitsFirstSessionOnboardingAndDuration(t *testing.T) {
 	}
 }
 
+type fakeTracker struct {
+	issue domain.Issue
+	err   error
+	ids   []domain.TrackerID
+}
+
+func (f *fakeTracker) Get(_ context.Context, id domain.TrackerID) (domain.Issue, error) {
+	f.ids = append(f.ids, id)
+	if f.err != nil {
+		return domain.Issue{}, f.err
+	}
+	return f.issue, nil
+}
+
+func (f *fakeTracker) List(context.Context, domain.TrackerRepo, domain.ListFilter) ([]domain.Issue, error) {
+	return nil, nil
+}
+
+func (f *fakeTracker) Preflight(context.Context) error { return nil }
+
+func TestSpawnEnrichesIssueContextFromTracker(t *testing.T) {
+	st := newFakeStore()
+	st.projects["mer"] = domain.ProjectRecord{ID: "mer", RepoOriginURL: "https://github.com/acme/repo.git"}
+	fc := &fakeCommander{}
+	tracker := &fakeTracker{issue: domain.Issue{
+		ID:        domain.TrackerID{Provider: domain.TrackerProviderGitHub, Native: "acme/repo#42"},
+		Title:     "Fix generated prompts",
+		Body:      "Prompt files should include standing instructions.",
+		State:     domain.IssueInProgress,
+		URL:       "https://github.com/acme/repo/issues/42",
+		Labels:    []string{"bug", "prompts"},
+		Assignees: []string{"dev"},
+	}}
+	svc := NewWithDeps(Deps{Manager: fc, Store: st, Tracker: tracker})
+
+	if _, err := svc.Spawn(context.Background(), ports.SpawnConfig{ProjectID: "mer", Kind: domain.KindWorker, IssueID: "42"}); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if len(tracker.ids) != 1 || tracker.ids[0].Provider != domain.TrackerProviderGitHub || tracker.ids[0].Native != "acme/repo#42" {
+		t.Fatalf("tracker ids = %+v, want github acme/repo#42", tracker.ids)
+	}
+	issueContext := fc.spawnedCfg.IssueContext
+	for _, want := range []string{
+		"Issue: acme/repo#42",
+		"Title: Fix generated prompts",
+		"State: in_progress",
+		"URL: https://github.com/acme/repo/issues/42",
+		"Labels: bug, prompts",
+		"Assignees: dev",
+		"Body:\nPrompt files should include standing instructions.",
+	} {
+		if !strings.Contains(issueContext, want) {
+			t.Fatalf("IssueContext missing %q:\n%s", want, issueContext)
+		}
+	}
+}
+
+func TestSpawnIssueContextFetchFailureFallsBack(t *testing.T) {
+	st := newFakeStore()
+	st.projects["mer"] = domain.ProjectRecord{ID: "mer", RepoOriginURL: "https://github.com/acme/repo"}
+	fc := &fakeCommander{}
+	tracker := &fakeTracker{err: errors.New("tracker unavailable")}
+	svc := NewWithDeps(Deps{Manager: fc, Store: st, Tracker: tracker})
+
+	if _, err := svc.Spawn(context.Background(), ports.SpawnConfig{ProjectID: "mer", Kind: domain.KindWorker, IssueID: "42"}); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if len(tracker.ids) != 1 {
+		t.Fatalf("tracker calls = %d, want 1", len(tracker.ids))
+	}
+	if fc.spawnedCfg.IssueContext != "" {
+		t.Fatalf("IssueContext = %q, want fallback empty context", fc.spawnedCfg.IssueContext)
+	}
+}
+
+// TestSpawnPreservesIssueIDWhenTrackerIsNil covers the issue #2685 boundary: when
+// the daemon wiring cannot build a GitHub tracker (no token), it hands the session
+// service a true-nil ports.Tracker. Spawn must still create the session, preserve
+// IssueID, and skip only the GitHub issue-context enrichment — not panic on a
+// typed-nil tracker the way the pre-fix wiring did.
+func TestSpawnPreservesIssueIDWhenTrackerIsNil(t *testing.T) {
+	st := newFakeStore()
+	st.projects["mer"] = domain.ProjectRecord{ID: "mer", RepoOriginURL: "https://github.com/acme/repo"}
+	fc := &fakeCommander{}
+	svc := NewWithDeps(Deps{Manager: fc, Store: st, Tracker: nil})
+
+	if _, err := svc.Spawn(context.Background(), ports.SpawnConfig{ProjectID: "mer", Kind: domain.KindWorker, IssueID: "107"}); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if fc.spawnedCfg.IssueID != "107" {
+		t.Fatalf("IssueID = %q, want 107 preserved", fc.spawnedCfg.IssueID)
+	}
+	if fc.spawnedCfg.IssueContext != "" {
+		t.Fatalf("IssueContext = %q, want empty (no tracker enrichment)", fc.spawnedCfg.IssueContext)
+	}
+}
+
+func TestSpawnIssueContextSkipsUnresolvableIssueRef(t *testing.T) {
+	st := newFakeStore()
+	st.projects["mer"] = domain.ProjectRecord{ID: "mer", RepoOriginURL: "https://github.com/acme/repo"}
+	fc := &fakeCommander{}
+	tracker := &fakeTracker{}
+	svc := NewWithDeps(Deps{Manager: fc, Store: st, Tracker: tracker})
+
+	if _, err := svc.Spawn(context.Background(), ports.SpawnConfig{ProjectID: "mer", Kind: domain.KindWorker, IssueID: "not-an-issue"}); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if len(tracker.ids) != 0 {
+		t.Fatalf("tracker calls = %d, want 0", len(tracker.ids))
+	}
+	if fc.spawnedCfg.IssueContext != "" {
+		t.Fatalf("IssueContext = %q, want empty", fc.spawnedCfg.IssueContext)
+	}
+}
+
 func TestSpawnFailedEmitsDuration(t *testing.T) {
 	st := newFakeStore()
 	st.projects["mer"] = domain.ProjectRecord{ID: "mer"}
@@ -583,6 +844,7 @@ func TestToAPIErrorMapsWorkspaceBranchSentinels(t *testing.T) {
 		{"runtime prerequisite missing", fmt.Errorf("spawn: %w: tmux required on macOS/Linux but not in PATH", ports.ErrRuntimePrerequisite), apierr.KindInvalid, "RUNTIME_PREREQUISITE_MISSING"},
 		{"unknown harness", fmt.Errorf("spawn: %w: %q", sessionmanager.ErrUnknownHarness, "bogus"), apierr.KindInvalid, "UNKNOWN_HARNESS"},
 		{"missing harness", fmt.Errorf("spawn: %w: configure project worker.agent or pass --harness", sessionmanager.ErrMissingHarness), apierr.KindInvalid, "AGENT_REQUIRED"},
+		{"awaiting decision", fmt.Errorf("send mer-1: %w", sessionmanager.ErrAwaitingDecision), apierr.KindConflict, "SESSION_AWAITING_DECISION"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

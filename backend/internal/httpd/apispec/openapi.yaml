@@ -189,6 +189,100 @@ paths:
       summary: Run the legacy AO project import through the daemon store
       tags:
       - import
+  /api/v1/mobile/disable:
+    post:
+      operationId: disableMobile
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileStatusResponse'
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+      summary: Disable the Connect Mobile LAN bridge
+      tags:
+      - mobile
+  /api/v1/mobile/enable:
+    post:
+      operationId: enableMobile
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileStatusResponse'
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+      summary: Enable the Connect Mobile LAN bridge and issue a fresh password
+      tags:
+      - mobile
+  /api/v1/mobile/regenerate:
+    post:
+      operationId: regenerateMobile
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileStatusResponse'
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+      summary: Rotate the Connect Mobile password, dropping any connected phone
+      tags:
+      - mobile
+  /api/v1/mobile/status:
+    get:
+      operationId: getMobileStatus
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileStatusResponse'
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+      summary: Check whether Connect Mobile's LAN bridge is enabled
+      tags:
+      - mobile
   /api/v1/notifications:
     get:
       operationId: listNotifications
@@ -621,6 +715,43 @@ paths:
                 $ref: '#/components/schemas/APIError'
           description: Internal Server Error
       summary: Replace a project's per-project config
+      tags:
+      - projects
+  /api/v1/projects/initialize:
+    post:
+      operationId: initializeProjectRepository
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitializeRepositoryInput'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InitializeRepositoryResult'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+      summary: Initialize a selected folder as a Git repository with an initial commit
       tags:
       - projects
   /api/v1/prs/{id}/merge:
@@ -1314,6 +1445,45 @@ paths:
       summary: List a worker's code-review runs
       tags:
       - reviews
+  /api/v1/sessions/{sessionId}/reviews/cancel:
+    post:
+      operationId: cancelReview
+      parameters:
+      - description: Session identifier, e.g. project-1.
+        in: path
+        name: sessionId
+        required: true
+        schema:
+          description: Session identifier, e.g. project-1.
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelReviewResponse'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Unprocessable Entity
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Cancel a running code review
+      tags:
+      - reviews
   /api/v1/sessions/{sessionId}/reviews/submit:
     post:
       operationId: submitReview
@@ -1486,6 +1656,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/APIError'
           description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
         "500":
           content:
             application/json:
@@ -1493,6 +1669,96 @@ paths:
                 $ref: '#/components/schemas/APIError'
           description: Internal Server Error
       summary: Send a message to a running session's agent
+      tags:
+      - sessions
+  /api/v1/sessions/{sessionId}/workspace/file:
+    get:
+      operationId: getSessionWorkspaceFile
+      parameters:
+      - description: Session identifier, e.g. project-1.
+        in: path
+        name: sessionId
+        required: true
+        schema:
+          description: Session identifier, e.g. project-1.
+          type: string
+      - description: Session-worktree-relative file path.
+        in: query
+        name: path
+        schema:
+          description: Session-worktree-relative file path.
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceFileResponse'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Read one session workspace file and its git diff
+      tags:
+      - sessions
+  /api/v1/sessions/{sessionId}/workspace/files:
+    get:
+      operationId: listSessionWorkspaceFiles
+      parameters:
+      - description: Session identifier, e.g. project-1.
+        in: path
+        name: sessionId
+        required: true
+        schema:
+          description: Session identifier, e.g. project-1.
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListWorkspaceFilesResponse'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: List files in a session workspace with git change status
       tags:
       - sessions
   /api/v1/sessions/cleanup:
@@ -1592,6 +1858,18 @@ components:
       required:
       - id
       - label
+      type: object
+    CancelReviewResponse:
+      properties:
+        reviewerHandleId:
+          type: string
+        reviews:
+          items:
+            $ref: '#/components/schemas/PRReviewState'
+          type: array
+      required:
+      - reviewerHandleId
+      - reviews
       type: object
     ClaimPRRequest:
       properties:
@@ -1790,6 +2068,20 @@ components:
       - available
       - legacyRoot
       type: object
+    InitializeRepositoryInput:
+      properties:
+        path:
+          type: string
+      required:
+      - path
+      type: object
+    InitializeRepositoryResult:
+      properties:
+        path:
+          type: string
+      required:
+      - path
+      type: object
     KillSessionResponse:
       properties:
         freed:
@@ -1878,6 +2170,21 @@ components:
       required:
       - sessions
       type: object
+    ListWorkspaceFilesResponse:
+      properties:
+        files:
+          items:
+            $ref: '#/components/schemas/WorkspaceFileSummary'
+          type: array
+        sessionId:
+          type: string
+        truncated:
+          type: boolean
+      required:
+      - sessionId
+      - files
+      - truncated
+      type: object
     MarkAllNotificationsReadResponse:
       properties:
         notifications:
@@ -1909,6 +2216,25 @@ components:
       - ok
       - prNumber
       - method
+      type: object
+    MobileStatusResponse:
+      properties:
+        enabled:
+          type: boolean
+        host:
+          type: string
+        password:
+          type: string
+        port:
+          type: integer
+        warning:
+          type: string
+      required:
+      - enabled
+      - host
+      - port
+      - password
+      - warning
       type: object
     NotificationEnvelope:
       properties:
@@ -2061,6 +2387,10 @@ components:
       properties:
         agentConfig:
           $ref: '#/components/schemas/AgentConfig'
+        agentRules:
+          type: string
+        agentRulesFile:
+          type: string
         defaultBranch:
           type: string
         env:
@@ -2069,6 +2399,8 @@ components:
           type: object
         orchestrator:
           $ref: '#/components/schemas/RoleOverride'
+        orchestratorRules:
+          type: string
         postCreate:
           items:
             type: string
@@ -2555,16 +2887,28 @@ components:
       type: object
     SetActivityRequest:
       properties:
+        agentSessionId:
+          description: Native agent session identifier used to resume its transcript.
+          type: string
+        event:
+          description: AO hook sub-command that produced this state (e.g. post-tool-use).
+          type: string
         state:
-          description: Agent activity state reported by an agent hook.
+          description: Agent activity state reported by an agent hook. Optional for
+            metadata-only hooks.
           enum:
           - active
           - idle
           - waiting_input
+          - blocked
           - exited
           type: string
-      required:
-      - state
+        toolName:
+          description: Native tool name, for tool-use hook events.
+          type: string
+        toolUseId:
+          description: Native tool-use id, for tool-use hook events.
+          type: string
       type: object
     SetActivityResponse:
       properties:
@@ -2720,6 +3064,82 @@ components:
       - reviewerHandleId
       - reviews
       type: object
+    WorkspaceFileResponse:
+      properties:
+        additions:
+          type: integer
+        binary:
+          type: boolean
+        content:
+          type: string
+        contentTruncated:
+          type: boolean
+        deleted:
+          type: boolean
+        deletions:
+          type: integer
+        diff:
+          type: string
+        diffTruncated:
+          type: boolean
+        path:
+          type: string
+        sessionId:
+          type: string
+        size:
+          format: int64
+          type: integer
+        status:
+          enum:
+          - unmodified
+          - modified
+          - added
+          - deleted
+          - renamed
+          type: string
+      required:
+      - sessionId
+      - path
+      - status
+      - additions
+      - deletions
+      - size
+      - binary
+      - deleted
+      - content
+      - contentTruncated
+      - diff
+      - diffTruncated
+      type: object
+    WorkspaceFileSummary:
+      properties:
+        additions:
+          type: integer
+        binary:
+          type: boolean
+        deletions:
+          type: integer
+        path:
+          type: string
+        size:
+          format: int64
+          type: integer
+        status:
+          enum:
+          - unmodified
+          - modified
+          - added
+          - deleted
+          - renamed
+          type: string
+      required:
+      - path
+      - status
+      - additions
+      - deletions
+      - size
+      - binary
+      type: object
     WorkspaceRepo:
       properties:
         name:
@@ -2750,3 +3170,5 @@ tags:
   name: events
 - description: Legacy AO project import (availability probe and run)
   name: import
+- description: Connect Mobile LAN bridge control (loopback/desktop only)
+  name: mobile
