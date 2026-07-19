@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import Link from "next/link";
 import gsap from "gsap";
 import ScrollTrigger from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
@@ -130,7 +131,7 @@ export function LandingNav() {
 				ref={innerRef}
 				className="relative mx-auto flex h-14 w-full max-w-4xl items-center justify-between gap-5 rounded-full border border-[color:var(--border)] bg-[color:var(--bg)]/70 px-5 backdrop-blur-xl shadow-lg transition-all duration-500 ease-out [.nav-scrolled_&]:h-12 [.nav-scrolled_&]:max-w-3xl [.nav-scrolled_&]:bg-[color:var(--bg)]/90"
 			>
-				<a href="/" data-testid="nav-logo" className="group inline-flex h-10 shrink-0 items-center gap-3">
+				<Link href="/" data-testid="nav-logo" className="group inline-flex h-10 shrink-0 items-center gap-3">
 					<img
 						src="/ao-logo.svg"
 						alt="Agent Orchestrator"
@@ -139,17 +140,17 @@ export function LandingNav() {
 					<span className="hidden text-[15px] font-semibold leading-[1.1] tracking-tight text-[color:var(--fg)] sm:block">
 						Agent Orchestrator
 					</span>
-				</a>
+				</Link>
 
 				<nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-7 md:flex" aria-label="Primary">
 					{navLinks.map((item) => (
-						<a
+						<Link
 							key={item.label}
 							href={item.href}
 							className="landing-nav-link px-1.5 py-1.5 text-[13px] font-medium tracking-wide focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[color:var(--accent)]"
 						>
 							{item.label}
-						</a>
+						</Link>
 					))}
 				</nav>
 
@@ -192,14 +193,14 @@ export function LandingNav() {
 					className="absolute inset-x-0 top-full mt-4 flex flex-col gap-1 rounded-2xl border border-[color:var(--border)] bg-[color:var(--bg)]/95 p-4 mx-4 backdrop-blur-xl shadow-2xl md:hidden"
 				>
 					{navLinks.map((item) => (
-						<a
+						<Link
 							key={item.label}
 							href={item.href}
 							onClick={() => setOpen(false)}
 							className="flex items-center rounded-lg px-4 py-3 text-[15px] font-medium text-[color:var(--fg)] transition-colors hover:bg-[color:var(--bg-elevated)]"
 						>
 							{item.label}
-						</a>
+						</Link>
 					))}
 					<div className="my-2 h-px bg-[color:var(--border)]" />
 					<div className="flex justify-center gap-6 py-2">
