@@ -708,6 +708,10 @@ export interface components {
             id: string;
             label: string;
         };
+        BotReviewFeedbackConfig: {
+            allowAuthors?: string[];
+            denyAuthors?: string[];
+        };
         CancelReviewResponse: {
             reviewerHandleId: string;
             reviews: components["schemas"]["PRReviewState"][];
@@ -903,6 +907,7 @@ export interface components {
             agentConfig?: components["schemas"]["AgentConfig"];
             agentRules?: string;
             agentRulesFile?: string;
+            botReviewFeedback?: components["schemas"]["BotReviewFeedbackConfig"];
             defaultBranch?: string;
             env?: {
                 [key: string]: string;
