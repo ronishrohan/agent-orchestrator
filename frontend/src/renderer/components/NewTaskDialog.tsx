@@ -163,7 +163,17 @@ export function NewTaskDialog({ open, projectId, onCreated, onOpenChange }: NewT
 								placeholder="Describe the change, constraints, and expected verification."
 								value={prompt}
 								onChange={(event) => setPrompt(event.target.value)}
+								onKeyDown={(event) => {
+									// Chat-style, matching Claude Code / Codex: Enter starts the task,
+									// Shift+Enter inserts a newline. Guard against IME composition so
+									// committing a CJK candidate with Enter doesn't submit.
+									if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+										event.preventDefault();
+										event.currentTarget.form?.requestSubmit();
+									}
+								}}
 							/>
+							<p className="text-caption text-muted-foreground">Enter to start · Shift+Enter for a new line</p>
 						</div>
 
 						<div className="grid gap-3 sm:grid-cols-[1fr_1fr]">
