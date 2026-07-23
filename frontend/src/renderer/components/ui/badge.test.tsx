@@ -5,7 +5,7 @@ import { Badge } from "./badge";
 describe("Badge", () => {
 	it("sizes text badges as content-width pills instead of fixed icon squares", () => {
 		render(
-			<Badge variant="success" className="h-5 px-1.5 text-micro font-medium">
+			<Badge variant="default" className="h-5 px-1.5 text-micro font-medium">
 				open
 			</Badge>,
 		);
@@ -14,13 +14,13 @@ describe("Badge", () => {
 
 		expect(badge).not.toHaveClass("size-icon-xl");
 		expect(badge).not.toHaveClass("h-icon-xl");
-		expect(badge.className).not.toMatch(/\b(?:w|min-w)-/);
-		expect(badge).toHaveClass("inline-flex", "whitespace-nowrap", "rounded-full", "h-5", "px-1.5");
+		expect(badge.className).not.toMatch(/\b(?:w-icon|min-w-icon)-/);
+		expect(badge).toHaveClass("inline-flex", "whitespace-nowrap", "rounded-4xl", "h-5", "px-1.5");
 	});
 
 	it("lets compact call sites override badge height without reintroducing fixed width", () => {
 		render(
-			<Badge variant="neutral" className="h-3.5 px-1 text-[9px] leading-none">
+			<Badge variant="secondary" className="h-3.5 px-1 text-[9px] leading-none">
 				2d ago
 			</Badge>,
 		);

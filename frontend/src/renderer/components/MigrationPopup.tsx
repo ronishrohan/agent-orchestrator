@@ -88,7 +88,7 @@ export function MigrationPopup() {
 							<Button variant="ghost" onClick={() => setSkipped(true)} disabled={busy} type="button">
 								Skip
 							</Button>
-							<Button variant="primary" onClick={proceed} disabled={busy} type="button">
+							<Button variant="default" onClick={proceed} disabled={busy} type="button">
 								{busy && <Loader2 className="mr-2 size-icon-base animate-spin" />}
 								{error ? "Retry" : "Proceed"}
 							</Button>

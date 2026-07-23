@@ -347,7 +347,7 @@ function SettingsBody({ project, projectId, onSaved }: { project: Project; proje
 			</Card>
 
 			<div className="flex items-center gap-3">
-				<Button type="submit" variant="primary" disabled={mutation.isPending}>
+				<Button type="submit" variant="default" disabled={mutation.isPending}>
 					{mutation.isPending ? "Saving…" : "Save changes"}
 				</Button>
 				{validationError && <span className="text-xs text-error">{validationError}</span>}

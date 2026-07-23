@@ -304,7 +304,7 @@ export function CreateProjectAgentSheet({
 							>
 								Cancel
 							</Button>
-							<Button type="submit" variant="primary" className="rounded-lg" disabled={!canSubmit}>
+							<Button type="submit" variant="default" className="rounded-lg" disabled={!canSubmit}>
 								{isInitializing
 									? "Setting up..."
 									: isCreating

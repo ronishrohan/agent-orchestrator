@@ -18,7 +18,7 @@ import { findProjectOrchestrator } from "../types/workspace";
 import { useUiStore } from "../stores/ui-store";
 import { CreateProjectFlow } from "./CreateProjectFlow";
 import { NewTaskDialog } from "./NewTaskDialog";
-import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "./ui/command";
+import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "./ui/command";
 
 function isMacPlatform(): boolean {
 	return typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent);
@@ -235,15 +235,15 @@ export function CommandPalette() {
 			<CommandDialog
 				open={isOpen}
 				onOpenChange={(open) => (open ? setOpen(true) : closePalette())}
-				commandProps={{
-					shouldFilter: false,
-					value,
-					onValueChange: setSelectedValue,
-					loop: true,
-					label: "Command palette",
-				}}
 			>
-				<CommandInput
+				<Command
+					shouldFilter={false}
+					value={value}
+					onValueChange={setSelectedValue}
+					loop={true}
+					label="Command palette"
+				>
+					<CommandInput
 					value={query}
 					onValueChange={(next) => {
 						setQuery(next);
@@ -283,6 +283,7 @@ export function CommandPalette() {
 						</CommandGroup>
 					))}
 				</CommandList>
+			</Command>
 			</CommandDialog>
 
 			<NewTaskDialog

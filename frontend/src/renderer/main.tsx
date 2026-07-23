@@ -8,6 +8,7 @@ import "./styles.css";
 import { queryClient } from "./lib/query-client";
 import { createAppRouter } from "./router";
 import { TelemetryBoundary } from "./components/TelemetryBoundary";
+import { TooltipProvider } from "./components/ui/tooltip";
 import { initTelemetry } from "./lib/telemetry";
 import { startDaemonFailureTelemetry } from "./lib/daemon-telemetry";
 
@@ -25,7 +26,9 @@ createRoot(document.getElementById("root") as HTMLElement).render(
 	<React.StrictMode>
 		<TelemetryBoundary>
 			<QueryClientProvider client={queryClient}>
-				<RouterProvider router={router} />
+				<TooltipProvider>
+					<RouterProvider router={router} />
+				</TooltipProvider>
 			</QueryClientProvider>
 		</TelemetryBoundary>
 	</React.StrictMode>,

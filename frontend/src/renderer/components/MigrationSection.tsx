@@ -159,7 +159,7 @@ export function MigrationSection() {
 				<div className="flex items-center gap-3">
 					<Button
 						type="button"
-						variant="primary"
+						variant="default"
 						onClick={() => run.mutate()}
 						disabled={run.isPending || (!available && !completed)}
 					>

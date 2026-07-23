@@ -166,7 +166,7 @@ export function UpdatesSection() {
 				{activeBuild && (
 					<div className="flex flex-col gap-2">
 						<div className="settings-row-bar h-auto min-h-(--size-settings-row) flex-wrap gap-2">
-							<Badge variant="accent">PR #{activeBuild.pr}</Badge>
+							<Badge variant="secondary">PR #{activeBuild.pr}</Badge>
 							<span className="min-w-0 flex-1 text-sm leading-5 text-settings-label">
 								You are on PR #{activeBuild.pr}'s build.
 							</span>
@@ -297,7 +297,7 @@ function FeatureBuildsSelect({
 							</span>
 							<div className="flex min-w-0 items-center gap-1.5">
 								<span className="min-w-0 truncate font-mono text-caption text-passive">{build.buildId}</span>
-								<Badge variant={isStale ? "warning" : "neutral"} className="h-3.5 px-1 text-[9px] leading-none">
+								<Badge variant={isStale ? "destructive" : "outline"} className="h-3.5 px-1 text-[9px] leading-none">
 									{ageLabel}
 								</Badge>
 							</div>
@@ -350,12 +350,12 @@ function UpdateActions({ status }: { status: UpdateStatus }) {
 			{showStatus && (
 				<div className="settings-row-bar h-auto min-h-0 flex-wrap justify-start gap-3 py-3">
 					{status.state === "available" && (
-						<Button type="button" variant="primary" onClick={() => void aoBridge.updates.download()}>
+						<Button type="button" variant="default" onClick={() => void aoBridge.updates.download()}>
 							Update to {status.version ? `v${status.version}` : "latest"}
 						</Button>
 					)}
 					{status.state === "downloaded" && (
-						<Button type="button" variant="primary" onClick={() => void aoBridge.updates.install()}>
+						<Button type="button" variant="default" onClick={() => void aoBridge.updates.install()}>
 							Restart &amp; install
 						</Button>
 					)}
