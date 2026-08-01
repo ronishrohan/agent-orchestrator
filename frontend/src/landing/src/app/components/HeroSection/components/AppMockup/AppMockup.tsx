@@ -5,7 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProp
 
 export type { ActiveDemo } from "./types";
 
-type BoardColumnId = "working" | "action" | "pending" | "merge";
+type BoardColumnId = "working" | "staging" | "in_review" | "merge";
 type CardTone = "default" | "review" | "blocked" | "ready";
 type ActivityState = "running" | "passed" | "failed" | "reviewing" | "waiting";
 type TrackId = "landing" | "deploy" | "stars" | "icons" | "footer";
@@ -41,7 +41,6 @@ interface PreviewColumn {
 	cards: StaticPreviewCard[];
 	count: number;
 	id: BoardColumnId;
-	title: string;
 }
 
 interface TrackItem {
@@ -127,7 +126,6 @@ const REVIEWERS = {
 const columns = [
 	{
 		id: "working",
-		title: "Pending Work",
 		count: 9,
 		cards: [
 			{
@@ -189,8 +187,7 @@ const columns = [
 		],
 	},
 	{
-		id: "action",
-		title: "Iterating",
+		id: "staging",
 		count: 4,
 		cards: [
 			{
@@ -204,20 +201,19 @@ const columns = [
 				checks: "checks running",
 				files: "1 file",
 				time: "46m ago",
-				badge: null,
-				tone: "default",
-				testResults: { pass: 27, total: 44 },
+				badge: "Needs input",
+				tone: "blocked",
 			},
 			{
-				title: "Wire hero mockup progression delays",
-				branch: "landing/progression-timing",
-				agent: previewAgents.codex.agent,
-				icon: previewAgents.codex.icon,
-				activity: "Tuning interval jitter",
+				title: "Run integration tests on webhook handler",
+				branch: "webhooks/integration-tests",
+				agent: "Codex",
+				icon: "/app-icons/coverage-codex.svg",
+				activity: "Running checks",
 				activityState: "running",
-				pr: "PR #331",
+				pr: "draft",
 				checks: "checks running",
-				files: "1 file",
+				files: "3 files",
 				time: "22m ago",
 				badge: null,
 				tone: "default",
@@ -225,8 +221,7 @@ const columns = [
 		],
 	},
 	{
-		id: "pending",
-		title: "In Review",
+		id: "in_review",
 		count: 5,
 		cards: [
 			{
@@ -264,7 +259,6 @@ const columns = [
 	},
 	{
 		id: "merge",
-		title: "Ready to merge",
 		count: 3,
 		cards: [
 			{
@@ -287,11 +281,14 @@ const columns = [
 	},
 ] satisfies PreviewColumn[];
 
-const COLUMN_COLORS: Record<BoardColumnId, string> = {
-	working: "#60a5fa", // --color-status-working
-	action: "#fb923c", // --color-status-needs-you
-	pending: "#facc15", // --color-status-in-review
-	merge: "#4ade80", // --color-status-ready
+const COLUMN_CONFIG: Record<
+	BoardColumnId,
+	{ title: string; color: string; weight: number }
+> = {
+	working: { title: "Working", color: "#60a5fa", weight: 4 },
+	staging: { title: "Staging", color: "#38bdf8", weight: 3 },
+	in_review: { title: "In Review", color: "#facc15", weight: 2 },
+	merge: { title: "Ready to merge", color: "#4ade80", weight: 1 },
 };
 
 const projectItems: TrackItem[] = [
@@ -871,28 +868,27 @@ function randomTime() {
 }
 
 function advanceCard(card: PreviewCard): PreviewCard {
+	// Advancing an attention card ("waiting") represents the agent unblocking.
+	// Clear the blocked/waiting state so the next column shows normal progress.
 	if (card.column === "working") {
 		const { activity, testResults } = pickStagingActivity();
 		return {
 			...card,
-			column: "action",
-			activity,
+			column: "staging",
+			activity: "Running checks",
 			activityState: "running",
 			badge: null,
 			tone: "default",
-			time: randomTime(),
-			testResults,
-			pr: card.pr === "draft" ? `PR #${320 + Math.floor(Math.random() * 20)}` : card.pr,
+			time: "just now",
 		};
 	}
 
-	if (card.column === "action") {
-		const review = pickRandom(IN_REVIEW_STATES);
+	if (card.column === "staging") {
 		return {
 			...card,
-			column: "pending",
-			activity: review.activity,
-			activityState: review.activityState,
+			column: "in_review",
+			activity: "Reviewer assigned",
+			activityState: "reviewing",
 			badge: "Awaiting review",
 			tone: "review",
 			time: randomTime(),
@@ -903,18 +899,20 @@ function advanceCard(card: PreviewCard): PreviewCard {
 		};
 	}
 
-	return {
-		...card,
-		column: "merge",
-		activity: pickRandom(MERGE_ACTIVITIES),
-		activityState: "passed",
-		badge: null,
-		tone: "ready",
-		time: randomTime(),
-		reviewers: card.reviewers ?? pickReviewers(),
-		prComments: card.prComments ?? 0,
-		testResults: undefined,
-	};
+	if (card.column === "in_review") {
+		return {
+			...card,
+			column: "merge",
+			activity: "Ready to land",
+			activityState: "passed",
+			badge: "Ready",
+			tone: "ready",
+			time: "just now",
+		};
+	}
+
+	// Merge column already handled by mergeCard; return unchanged as safety.
+	return card;
 }
 
 function cardStatusColor(card: PreviewCard): string {
@@ -939,6 +937,43 @@ function randomDelay() {
 function randomItem<T>(items: T[]): T | null {
 	if (items.length === 0) return null;
 	return items[Math.floor(Math.random() * items.length)] ?? null;
+}
+
+// Weighted random selection. Higher-weight items are picked proportionally
+// more often. Used to bias card advancement toward earlier columns so the
+// pipeline visibly drains left-to-right instead of firing uniformly.
+function pickWeighted<T>(items: T[], weight: (item: T) => number): T | null {
+	if (items.length === 0) return null;
+	let total = 0;
+	for (const item of items) total += Math.max(0, weight(item));
+	if (total <= 0) return null;
+	let threshold = Math.random() * total;
+	for (const item of items) {
+		threshold -= Math.max(0, weight(item));
+		if (threshold <= 0) return item;
+	}
+	return items[items.length - 1] ?? null;
+}
+
+function useImageReady(src: string) {
+	const [isReady, setIsReady] = useState(false);
+
+	useEffect(() => {
+		setIsReady(false);
+		const image = new window.Image();
+		image.src = src;
+
+		if (image.complete) {
+			setIsReady(true);
+			return;
+		}
+
+		const handleLoad = () => setIsReady(true);
+		image.addEventListener("load", handleLoad);
+		return () => image.removeEventListener("load", handleLoad);
+	}, [src]);
+
+	return isReady;
 }
 
 // The preview is a prop, not a real app. It exposes ~13 fake controls, so pull the
@@ -1455,38 +1490,6 @@ function ArchiveBar({ count }: { count: number }) {
 	);
 }
 
-function BoardChrome({ viewMode }: { viewMode: ViewMode }) {
-	return (
-		<div className="flex h-10 shrink-0 items-center gap-2 border-b border-[var(--preview-border-strong)] px-4">
-			<div className="min-w-0 truncate text-[16px] font-semibold tracking-tight leading-none text-[var(--preview-foreground)]">
-				{viewMode === "orchestrator" ? "Orchestrator" : "agent-orchestrator"}
-			</div>
-			<div className="min-w-0 flex-1" />
-			{/* Static chrome — TopbarButton accent / primary / icon at control-lg (34px). */}
-			<span
-				aria-hidden="true"
-				className="inline-flex h-[34px] items-center gap-1.5 rounded-md border border-[var(--preview-border)] bg-[var(--preview-raised)] px-3.5 text-sm font-semibold leading-none text-[var(--preview-muted-foreground)]"
-			>
-				<PlusIcon className="h-4 w-4" />
-				<span>New task</span>
-			</span>
-			<span
-				aria-hidden="true"
-				className="inline-flex h-[34px] items-center gap-1.5 rounded-md bg-[var(--preview-primary)] px-3.5 text-sm font-semibold leading-none text-[var(--preview-primary-foreground)]"
-			>
-				<OrchestratorIcon className="h-4 w-4" />
-				Orchestrator
-			</span>
-			<span
-				aria-hidden="true"
-				className="grid size-[34px] shrink-0 place-items-center rounded-md text-[var(--preview-muted-foreground)]"
-			>
-				<BellIcon className="h-6 w-6 mb-2" />
-			</span>
-		</div>
-	);
-}
-
 type ActivityIconId = "check" | "warning" | "github" | "waiting" | "spinner";
 
 type CardVisualState = {
@@ -1496,6 +1499,9 @@ type CardVisualState = {
 	activityIcon: ActivityIconId;
 };
 
+// Single source of truth for per-card rendering state. Replaces scattered
+// tone/activityState ternaries in BoardCard so adding a new state is a
+// one-object edit.
 function getCardVisualState(card: PreviewCard): CardVisualState {
 	const prStatus =
 		card.tone === "ready"
@@ -1536,81 +1542,46 @@ function getCardVisualState(card: PreviewCard): CardVisualState {
 	return { prStatus, prClass, activityColor, activityIcon };
 }
 
-function CircleProgressIcon({ pass, total }: { pass: number; total: number }) {
-	const r = 5;
-	const circ = 2 * Math.PI * r;
-	const ratio = total > 0 ? pass / total : 0;
-	const dash = ratio * circ;
-	const trackColor = "#374151";
-	const fillColor = ratio >= 1 ? "#4ade80" : ratio < 0.5 ? "#fb923c" : "#e5e7eb";
-	return (
-		<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
-			<circle cx="6" cy="6" r={r} stroke={trackColor} strokeWidth="1.5" />
-			<circle
-				cx="6"
-				cy="6"
-				r={r}
-				stroke={fillColor}
-				strokeWidth="1.5"
-				strokeDasharray={`${dash} ${circ}`}
-				strokeLinecap="round"
-				transform="rotate(-90 6 6)"
-			/>
-		</svg>
-	);
-}
-
-function ActivityIcon({ id, testResults }: { id: ActivityIconId; testResults?: { pass: number; total: number } }) {
+function ActivityIcon({ id }: { id: ActivityIconId }) {
 	if (id === "check") return <CheckIcon className="h-3 w-3" />;
 	if (id === "warning") return <WarningIcon className="h-3 w-3" />;
 	if (id === "github") return <GitHubIcon className="h-3 w-3" />;
 	if (id === "waiting") return <WaitingIcon className="h-3 w-3" />;
-	if (testResults) return <CircleProgressIcon pass={testResults.pass} total={testResults.total} />;
 	return (
 		<span className="h-3 w-3 animate-spin rounded-full border border-[#4b5563] border-t-[#d1d5db]" />
 	);
 }
 
-// Card boxes from PR #3496 (ronishrohan hero board redesign), adapted to
-// this branch's column ids: staging→action, in_review→pending.
 function BoardCard({
 	card,
+	columnColor,
+	isHead,
 	isPulsing,
+	onMerge,
+	onOpen,
 }: {
 	card: PreviewCard;
+	columnColor: string;
+	isHead: boolean;
 	isPulsing: boolean;
+	onMerge: (id: string) => void;
+	onOpen: (card: PreviewCard) => void;
 }) {
-	const isTestCard = card.column === "action" && !!card.testResults;
-	const testTotal = card.testResults?.total ?? 0;
-	const [animatedPass, setAnimatedPass] = useState(() =>
-		isTestCard ? Math.floor(testTotal * 0.2) : 0,
-	);
-	useEffect(() => {
-		if (!isTestCard) return;
-		let timeout: number;
-		const tick = () => {
-			setAnimatedPass((p) => {
-				const jump = Math.floor(Math.random() * 4) + 1;
-				const next = p + jump;
-				return next >= testTotal ? Math.floor(testTotal * 0.2) : next;
-			});
-			timeout = window.setTimeout(tick, 200 + Math.random() * 350);
-		};
-		timeout = window.setTimeout(tick, 200 + Math.random() * 350);
-		return () => window.clearTimeout(timeout);
-	}, [isTestCard, testTotal]);
-
+	const [canPressScale, setCanPressScale] = useState(true);
 	const prMatch = card.pr.match(/PR\s+#(\d+)/i);
-	const { prStatus, prClass, activityColor, activityIcon } = getCardVisualState(card);
+	const { prStatus, prClass, activityColor, activityIcon } =
+		getCardVisualState(card);
 	const isWaiting = card.activityState === "waiting";
-	const isReviewFlag = isWaiting && card.column === "pending";
+	// Attention treatment: waiting cards get amber border. Only the topmost
+	// waiting card in each column pulses (see BoardColumn) so the animation
+	// keeps its scarcity value.
 	const attentionBorder = isWaiting
-		? isReviewFlag
-			? "border-[#f87171]/70"
-			: "border-[#fb923c]/60"
+		? "border-[#fb923c]/60"
 		: "border-[var(--preview-border)]";
-	const badgeColor = isReviewFlag ? "bg-[#f87171]" : "bg-[#fb923c]";
 	const attentionAnim = isWaiting && isPulsing ? "ao-attention-pulse" : "";
+	// Head-of-line treatment: topmost card reads as "currently happening".
+	// Non-head cards are dimmed slightly so the eye lands on the head first.
+	const headOpacity = isHead ? "" : "opacity-[0.88]";
 
 	return (
 		<motion.div
@@ -1628,29 +1599,26 @@ function BoardCard({
 				ease: [0.22, 1, 0.36, 1],
 				layout: { duration: 0.25, ease: [0.22, 1, 0.36, 1] },
 			}}
-			className={`pointer-events-none rounded-lg border ${attentionBorder} bg-[var(--preview-card)] shadow-[0_1px_1px_rgba(0,0,0,0.05)] ${attentionAnim}`}
+			className={`relative cursor-pointer rounded-[8px] border ${attentionBorder} bg-[var(--preview-card)] p-[15px] shadow-[0_1px_1px_rgba(0,0,0,0.05)] outline-none transition-colors hover:bg-[var(--preview-muted)] focus-visible:ring-2 focus-visible:ring-[var(--preview-ring)] ${attentionAnim} ${headOpacity}`}
 		>
-			<div className="flex items-start gap-2.5 px-3.5 pb-2.5 pt-3">
-				<div className="relative mt-0.5 h-3.5 w-3.5 shrink-0">
-					<img
-						src={card.icon}
-						alt=""
-						width={14}
-						height={14}
-						aria-hidden="true"
-						className="h-3.5 w-3.5"
-						draggable="false"
-					/>
-					{isWaiting ? (
-						<span
-							aria-hidden="true"
-							className={`pointer-events-none absolute -right-1 -top-1 flex h-2.5 w-2.5 items-center justify-center rounded-full ${badgeColor} text-[7px] font-black leading-none text-white shadow-[0_0_0_1.5px_var(--preview-card)]`}
-						>
-							!
-						</span>
-					) : null}
-				</div>
-				<div className="min-w-0 text-[11.5px] font-semibold leading-tight tracking-tight text-[var(--preview-card-foreground)]">
+			{isHead ? (
+				<span
+					aria-hidden="true"
+					className="pointer-events-none absolute inset-y-1 left-0 w-[2px] rounded-r-[2px]"
+					style={{ backgroundColor: columnColor }}
+				/>
+			) : null}
+			<div className="flex items-start gap-2">
+				<img
+					src={card.icon}
+					alt=""
+					width={16}
+					height={16}
+					aria-hidden="true"
+					className="mt-0.5 h-4 w-4 shrink-0"
+					draggable="false"
+				/>
+				<div className="min-w-0 pr-2 text-[12px] font-medium leading-[16px] text-[var(--preview-card-foreground)]">
 					{card.title}
 				</div>
 			</div>
@@ -1714,16 +1682,12 @@ function BoardCard({
 					</span>
 				</div>
 			) : (
-				<div className="flex items-center justify-between border-t border-[var(--preview-border)] px-3.5 py-2.5">
-					<span className={`inline-flex items-center gap-1.5 text-[10.5px] ${activityColor}`}>
-						<ActivityIcon
-							id={activityIcon}
-							testResults={isTestCard ? { pass: animatedPass, total: testTotal } : undefined}
-						/>
-						{isTestCard ? `${animatedPass}/${testTotal} passed` : card.activity}
-					</span>
-					<span className="text-[10.5px] text-[var(--preview-muted-foreground)]">
-						{card.time}
+				<div className="mt-3 flex items-center justify-between">
+					<span
+						className={`inline-flex items-center gap-1.5 text-[10px] ${activityColor}`}
+					>
+						<ActivityIcon id={activityIcon} />
+						{card.activity}
 					</span>
 				</div>
 			)}
@@ -1743,24 +1707,26 @@ function BoardColumn({
 	count: number;
 	title: string;
 }) {
+	// Sort attention cards ("waiting") to the top of the column. Framer
+	// Motion's `layout` prop animates the reorder when a card becomes
+	// attention or is unblocked.
 	const attentionCards = cards.filter((c) => c.activityState === "waiting");
 	const normalCards = cards.filter((c) => c.activityState !== "waiting");
 	const sortedCards = [...attentionCards, ...normalCards];
+	// Only the first attention card pulses. Additional waiting cards keep the
+	// static amber border but no keyframe, so the pulse preserves its
+	// scarcity value regardless of how many cards accumulate attention.
 	const pulsingId = attentionCards[0]?.id ?? null;
 	const extraWaiting = Math.max(0, attentionCards.length - 1);
 
 	return (
-		<section className="flex min-h-0 min-w-0 snap-start flex-col border-r border-[var(--preview-divider)] last:border-r-0">
-			<div className="flex h-10 shrink-0 items-center gap-2.5 border-b border-[var(--preview-divider)] px-4">
-				<span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
-				<div className="text-[10.5px] font-medium tracking-tight text-[var(--preview-muted-foreground)]">
-					{title}
-				</div>
-				<div className="ml-auto font-mono text-[10.5px] leading-none text-[var(--preview-muted-foreground)] opacity-60">
-					{count}
-				</div>
+		<section className="flex min-h-0 min-w-0 snap-start flex-col border-r border-[var(--preview-border)] last:border-r-0">
+			<div className="flex items-center gap-2 border-b border-[var(--preview-border)] px-3 py-2.5">
+				<span className="h-2 w-2 rounded-[2px]" style={{ backgroundColor: color }} />
+				<div className="text-[11px] font-semibold tracking-[-0.5px] text-[var(--preview-muted-foreground)]">{title}</div>
+				<div className="ml-2 text-[10px] tabular-nums text-[var(--preview-muted-foreground)]">{count}</div>
 				{extraWaiting > 0 ? (
-					<div className="inline-flex items-center gap-1 rounded-[4px] bg-[#fb923c]/10 px-1.5 py-0.5 text-[9px] font-semibold text-[#fb923c]">
+					<div className="ml-auto inline-flex items-center gap-1 rounded-[4px] bg-[#fb923c]/10 px-1.5 py-0.5 text-[9px] font-semibold text-[#fb923c]">
 						<WaitingIcon className="h-2.5 w-2.5" />
 						{extraWaiting} waiting
 					</div>
@@ -1768,11 +1734,15 @@ function BoardColumn({
 			</div>
 			<div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 pb-3 pt-3 scrollbar-hide">
 				<AnimatePresence initial={false}>
-					{sortedCards.map((card) => (
+					{sortedCards.map((card, index) => (
 						<BoardCard
 							key={`${card.id}-${card.column}`}
 							card={card}
+							columnColor={color}
+							isHead={index === 0}
 							isPulsing={card.id === pulsingId}
+							onMerge={onMerge}
+							onOpen={onOpen}
 						/>
 					))}
 				</AnimatePresence>
@@ -1790,7 +1760,11 @@ function OrchestratorView({
 }) {
 	const activeCards = cards.filter((card) => !card.merging);
 	const workingCards = activeCards.filter((card) => card.column === "working");
-	const waitingCards = activeCards.filter((card) => card.column === "action");
+	// "Waiting" is now a card-level state (column-agnostic) rather than a
+	// dedicated column, matching the in-column attention treatment.
+	const waitingCards = activeCards.filter(
+		(card) => card.activityState === "waiting",
+	);
 	const readyCards = activeCards.filter((card) => card.column === "merge");
 	const leadWorker = workingCards[0] ?? activeCards[0];
 
@@ -1977,7 +1951,12 @@ export function AppMockup() {
 			const trackId = selectedTrackId;
 			const incomingCards = incomingCardsByTrack[trackId];
 			updateTrackCards(trackId, (current) => {
-				const chosen = randomItem(current.filter((card) => !card.merging));
+				// Weight advancement by column so cards visibly drain left→right.
+				// Uniform random selection made the pipeline look chaotic.
+				const chosen = pickWeighted(
+					current.filter((card) => !card.merging && card.id !== selectedCardId),
+					(card) => COLUMN_CONFIG[card.column].weight,
+				);
 
 				let next = current;
 				if (chosen) {
@@ -1986,6 +1965,35 @@ export function AppMockup() {
 					} else {
 						next = current.map((card) =>
 							card.id === chosen.id ? advanceCard(card) : card,
+						);
+					}
+				}
+
+				// Occasionally flip a working/staging card to a waiting state.
+				// Attention is now column-agnostic (in-column pin, not a
+				// dedicated column) — this keeps the amber-pulse demo visible
+				// after the initial seed advances out.
+				if (Math.random() < 0.12) {
+					const flipCandidates = next.filter(
+						(card) =>
+							!card.merging &&
+							card.id !== selectedCardId &&
+							card.activityState !== "waiting" &&
+							(card.column === "working" || card.column === "staging"),
+					);
+					const target = randomItem(flipCandidates);
+					if (target) {
+						next = next.map((card) =>
+							card.id === target.id
+								? {
+										...card,
+										activity: "Needs your input",
+										activityState: "waiting" as const,
+										badge: "Needs input",
+										tone: "blocked" as const,
+										time: "just now",
+									}
+								: card,
 						);
 					}
 				}
@@ -2032,10 +2040,19 @@ export function AppMockup() {
 		return () => window.clearTimeout(timeoutId);
 	}, [mergeCard, selectedTrackId, updateTrackCards]);
 
+	const runningCount = cards.filter((card) => card.column === "working").length;
+	// Waiting is now column-agnostic: any card with activityState "waiting"
+	// (across any column) needs user attention.
+	const waitingCount = cards.filter(
+		(card) => !card.merging && card.activityState === "waiting",
+	).length;
 	const boardColumns = columns.map((column) => {
 		const columnCards = cards.filter((card) => card.column === column.id);
+		const config = COLUMN_CONFIG[column.id];
 		return {
-			...column,
+			id: column.id,
+			title: config.title,
+			color: config.color,
 			cards: columnCards,
 			count: columnCards.length,
 		};
@@ -2045,9 +2062,17 @@ export function AppMockup() {
 		<div
 			ref={windowRef}
 			role="img"
-			aria-label="Preview of the Agent Orchestrator board: agent tasks move across Pending Work, Iterating, In Review, and Ready to merge."
-			className="absolute z-10 select-none overflow-hidden rounded-[20px] border border-[var(--preview-border)] bg-[var(--preview-sidebar)] font-sans tracking-tight text-[var(--preview-foreground)] antialiased shadow-[0_30px_80px_-24px_rgba(0,0,0,0.75)] [&_.font-mono]:tracking-normal"
-			style={mockupShellStyle}
+			aria-label="Preview of the Agent Orchestrator board: agent tasks move left to right across Working, Staging, In Review, and Ready to merge. Cards needing user input are pinned to the top of their column with an amber highlight."
+			className="absolute z-10 select-none overflow-hidden rounded-xl border border-[var(--preview-border)] bg-[var(--preview-background)] font-sans tracking-[-0.5px] text-[var(--preview-foreground)] antialiased shadow-[0_30px_80px_-24px_rgba(0,0,0,0.75)] [&_.font-mono]:tracking-normal"
+			style={{
+				...previewTokenStyle,
+				position: "absolute",
+				left: "50%",
+				top: "50%",
+				width: `min(${BASE_WIDTH}px, calc(100% - ${WINDOW_MARGIN * 2}px))`,
+				height: `min(${BASE_HEIGHT}px, calc(100% - ${WINDOW_MARGIN * 2}px))`,
+				transform: "translate(-50%, -50%)",
+			}}
 		>
 			<style>{`
 				@keyframes ao-attention-pulse-frames {
@@ -2055,42 +2080,56 @@ export function AppMockup() {
 					50% { box-shadow: 0 0 0 4px rgba(251, 146, 60, 0); }
 				}
 				.ao-attention-pulse {
-					animation: ao-attention-pulse-frames 1.2s ease-in-out infinite;
+					animation: ao-attention-pulse-frames 2.2s ease-in-out infinite;
 				}
 				@media (prefers-reduced-motion: reduce) {
 					.ao-attention-pulse { animation: none; }
 				}
 			`}</style>
-			<div className="relative h-full w-full overflow-hidden">
-				<div
-					ref={contentRef}
-					className="h-(--mockup-design-h) w-(--mockup-design-w) origin-top-left"
-				>
-					<div className="flex h-full min-h-0">
-						<Sidebar cards={cards} />
-						<div className="flex min-h-0 min-w-0 flex-1 flex-col p-[2px]">
-							<div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[17px] border border-[var(--preview-border-strong)] bg-[var(--preview-background)]">
-								<BoardChrome viewMode={viewMode} />
-								<>
-									<div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-										<LayoutGroup key={selectedTrack.id}>
-											<div className="grid min-h-0 flex-1 grid-cols-4 overflow-hidden">
-												{boardColumns.map((column) => (
-													<BoardColumn
-														key={column.id}
-														cards={column.cards}
-														color={COLUMN_COLORS[column.id]}
-														count={column.count}
-														title={column.title}
-													/>
-												))}
-											</div>
-										</LayoutGroup>
-									</div>
-									<ArchiveBar count={mergedCount} />
-								</>
-							</div>
-						</div>
+			<div className="flex h-full flex-col">
+				<WindowTitlebar
+					mergedCount={mergedCount}
+					onNewTask={spawnRandomTask}
+					onTitlebarPointerDown={startDrag}
+					onViewChange={setViewMode}
+					runningCount={runningCount}
+					viewMode={viewMode}
+					waitingCount={waitingCount}
+				/>
+				<div className="flex min-h-0 flex-1">
+					<Sidebar
+						isRepoAvatarReady={isRepoAvatarReady}
+						onResizeStart={startSidebarResize}
+						onSelectTrack={selectTrack}
+						selectedTrackId={selectedTrack.id}
+						sidebarRef={sidebarRef}
+					/>
+					<div className="flex min-w-0 flex-1 flex-col bg-[var(--preview-background)]">
+						<Topbar
+							mergedCount={mergedCount}
+							selectedTrack={selectedTrack}
+							viewMode={viewMode}
+						/>
+						{viewMode === "orchestrator" ? (
+							<OrchestratorView
+								cards={cards}
+								onNewTask={spawnRandomTask}
+								selectedTrack={selectedTrack}
+							/>
+						) : (
+							<LayoutGroup key={`${selectedTrack.id}-${boardVersion}`}>
+								<div className="grid min-h-0 flex-1 auto-cols-[85%] grid-flow-col snap-x snap-mandatory overflow-x-auto overscroll-x-contain scrollbar-hide md:auto-cols-[48%] lg:grid-flow-row lg:grid-cols-4 lg:auto-cols-auto lg:snap-none lg:overflow-hidden">
+									{boardColumns.map((column) => (
+										<BoardColumn
+											key={column.id}
+											{...column}
+											onMerge={mergeCard}
+											onOpen={setSelectedCard}
+										/>
+									))}
+								</div>
+							</LayoutGroup>
+						)}
 					</div>
 				</div>
 			</div>
