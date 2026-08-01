@@ -1559,6 +1559,24 @@ function BoardCard({
 		<motion.div
 			layout
 			layoutId={`${card.id}-${card.column}`}
+			role="button"
+			tabIndex={0}
+			aria-label={`Open ${card.title} agent status`}
+			onClick={() => onOpen(card)}
+			onPointerDownCapture={(event) => {
+				const target = event.target as HTMLElement;
+				setCanPressScale(!target.closest("button"));
+			}}
+			onPointerLeave={() => setCanPressScale(true)}
+			onPointerUp={() => setCanPressScale(true)}
+			onKeyDown={(event) => {
+				if (event.key === "Enter" || event.key === " ") {
+					event.preventDefault();
+					onOpen(card);
+				}
+			}}
+			whileTap={canPressScale ? { scale: 0.96 } : undefined}
+			style={{ originX: 0.5, originY: 0.5 }}
 			initial={{ opacity: 0, scale: 0.98, y: -8 }}
 			animate={
 				card.merging
