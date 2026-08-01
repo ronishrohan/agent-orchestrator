@@ -17,10 +17,10 @@ const STATUS = {
 } as const;
 
 const columns = [
-	{ id: "working", label: "Idle / Working", color: STATUS.working, split: true },
-	{ id: "action", label: "Needs you", color: STATUS.needsYou, split: false },
-	{ id: "review", label: "In review", color: STATUS.inReview, split: false },
-	{ id: "merge", label: "Ready to merge / Merged", color: STATUS.ready, split: true },
+	{ id: "working", label: "Working", color: "#60a5fa" },
+	{ id: "staging", label: "Staging", color: "#38bdf8" },
+	{ id: "in_review", label: "In Review", color: "#facc15" },
+	{ id: "merge", label: "Ready to merge", color: "#4ade80" },
 ] as const;
 
 const cards = [
@@ -152,7 +152,7 @@ function BoardCard({
 		column === 0
 			? { label: status ?? "Working", color: statusColor ?? STATUS.working }
 			: column === 1
-				? { label: "Input needed", color: STATUS.needsYou }
+				? { label: "Running checks", color: "#9ca3af" }
 				: column === 2
 					? { label: status ?? "Review pending", color: statusColor ?? STATUS.inReview }
 					: { label: "Ready", color: STATUS.ready };
