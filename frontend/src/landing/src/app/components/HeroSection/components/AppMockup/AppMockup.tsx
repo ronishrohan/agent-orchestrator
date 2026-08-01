@@ -129,58 +129,30 @@ const columns = [
 		count: 9,
 		cards: [
 			{
-				title: "Tighten hero window border alignment",
-				branch: "landing/window-border-pass",
-				agent: previewAgents.claude.agent,
-				icon: previewAgents.claude.icon,
-				activity: "Editing file",
+				title: "Confirm whether download labels stay platform-aware",
+				branch: "landing/platform-download-copy",
+				agent: "Cursor",
+				icon: "/app-icons/cursor.svg",
+				activity: "Paused for copy decision",
+				activityState: "waiting",
+				pr: "draft",
+				checks: "needs product call",
+				files: "3 files",
+				time: "1h ago",
+				badge: "Needs input",
+				tone: "blocked",
+			},
+			{
+				title: "Port Figma board mock into the hero preview",
+				branch: "landing/figma-board-preview",
+				agent: "Claude",
+				icon: "/app-icons/coverage-claude-code.svg",
+				activity: "Editing hero preview",
 				activityState: "running",
 				pr: "draft",
 				checks: "editing",
 				files: "1 file",
 				time: "3m ago",
-				badge: null,
-				tone: "default",
-			},
-			{
-				title: "Remove stale generated icon imports",
-				branch: "cleanup/stale-icon-imports",
-				agent: previewAgents.opencode.agent,
-				icon: previewAgents.opencode.icon,
-				activity: "Deleting file",
-				activityState: "running",
-				pr: "draft",
-				checks: "cleanup",
-				files: "2 files",
-				time: "14m ago",
-				badge: null,
-				tone: "default",
-			},
-			{
-				title: "Document preview alias ownership",
-				branch: "deploy/alias-ownership",
-				agent: previewAgents.gemini.agent,
-				icon: previewAgents.gemini.icon,
-				activity: "Writing deployment notes",
-				activityState: "running",
-				pr: "draft",
-				checks: "editing",
-				files: "1 file",
-				time: "18m ago",
-				badge: null,
-				tone: "default",
-			},
-			{
-				title: "Confirm whether download labels stay platform-aware",
-				branch: "landing/platform-download-copy",
-				agent: previewAgents.cursor.agent,
-				icon: previewAgents.cursor.icon,
-				activity: "Editing copy",
-				activityState: "running",
-				pr: "draft",
-				checks: "editing",
-				files: "3 files",
-				time: "1h ago",
 				badge: null,
 				tone: "default",
 			},
@@ -1953,27 +1925,32 @@ export function AppMockup() {
 					}
 				}
 
-				// Occasionally flip a working/staging card to a waiting state.
-				// Attention is now column-agnostic (in-column pin, not a
-				// dedicated column) — this keeps the amber-pulse demo visible
-				// after the initial seed advances out.
+				// Occasionally flip a non-merge card to a waiting state.
+				// Attention is column-agnostic (in-column pin, not a dedicated
+				// column) — this keeps the amber-pulse demo visible after the
+				// initial seed advances out and demos that any column can hold
+				// attention (agent decisions in working/staging, reviewer
+				// change requests in in_review).
 				if (Math.random() < 0.12) {
 					const flipCandidates = next.filter(
 						(card) =>
 							!card.merging &&
 							card.id !== selectedCardId &&
 							card.activityState !== "waiting" &&
-							(card.column === "working" || card.column === "staging"),
+							card.column !== "merge",
 					);
 					const target = randomItem(flipCandidates);
 					if (target) {
+						const isReview = target.column === "in_review";
 						next = next.map((card) =>
 							card.id === target.id
 								? {
 										...card,
-										activity: "Needs your input",
+										activity: isReview
+											? "Reviewer requested changes"
+											: "Needs your input",
 										activityState: "waiting" as const,
-										badge: "Needs input",
+										badge: isReview ? "Changes requested" : "Needs input",
 										tone: "blocked" as const,
 										time: "just now",
 									}
