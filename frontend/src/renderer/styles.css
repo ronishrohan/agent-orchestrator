@@ -2250,8 +2250,8 @@ body.is-resizing-x [data-slot="sidebar-container"] {
    edge-to-edge layout. */
 .browser-popout-overlay {
 	position: fixed;
-	inset: env(titlebar-area-height, 0px) 0 0;
 	z-index: 40;
+	overflow: hidden;
 	background: color-mix(in srgb, var(--bg) 94%, black);
 }
 
@@ -2491,19 +2491,7 @@ body.is-resizing-x [data-slot="sidebar-container"] {
 	}
 }
 
-@keyframes browser-popout-in {
-	from {
-		opacity: 0.94;
-		transform: scale(0.992);
-	}
-	to {
-		opacity: 1;
-		transform: scale(1);
-	}
-}
-
 @media (prefers-reduced-motion: reduce) {
-	.browser-popout-overlay,
 	.browser-panel__transition-frame {
 		animation: none;
 	}

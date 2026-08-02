@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { motion, useReducedMotion, type Transition } from "motion/react";
 import type { PanelImperativeHandle, PanelSize } from "react-resizable-panels";
 import { BrowserPanelView, useBrowserAnnotationQueue } from "./BrowserPanel";
 import { CenterPane } from "./CenterPane";
@@ -27,6 +28,16 @@ const INSPECTOR_MIN_PERCENT = 22;
 const INSPECTOR_MAX_PERCENT = 45;
 const inspectorSplitStorageKey = "ao.inspector.split";
 const shellTopbarHiddenByPlatform = hidesShellTopbar();
+
+type BrowserOverlayRect = {
+	top: number;
+	left: number;
+	width: number;
+	height: number;
+};
+
+const BROWSER_OVERLAY_ENTER: Transition = { type: "spring", duration: 0.42, bounce: 0 };
+const BROWSER_OVERLAY_EXIT: Transition = { type: "spring", duration: 0.32, bounce: 0 };
 
 function initialSplitPercent(): number {
 	const raw = typeof window === "undefined" ? null : window.localStorage?.getItem(inspectorSplitStorageKey);
@@ -59,6 +70,7 @@ type SessionViewProps = {
 // flex-grow transition in styles.css. Content keeps a stable min-width inside
 // the clipped panel so nothing reflows mid-animation; split width persists.
 export function SessionView({ sessionId }: SessionViewProps) {
+	const reduceMotion = useReducedMotion();
 	const workspaceQuery = useWorkspaceQuery();
 	const workspaces = workspaceQuery.data ?? [];
 	const theme = useResolvedTheme();
@@ -74,7 +86,9 @@ export function SessionView({ sessionId }: SessionViewProps) {
 	const inspectorSeparatorRef = useRef<HTMLDivElement | null>(null);
 	const [terminalTarget, setTerminalTarget] = useState<TerminalTarget>({ kind: "worker" });
 	const [browserPoppedOut, setBrowserPoppedOut] = useState(false);
+	const [isBrowserExiting, setIsBrowserExiting] = useState(false);
 	const [filesPoppedOut, setFilesPoppedOut] = useState(false);
+	const browserOriginRectRef = useRef<BrowserOverlayRect | null>(null);
 
 	const session = workspaces.flatMap((workspace) => workspace.sessions).find((s) => s.id === sessionId);
 
@@ -189,24 +203,11 @@ export function SessionView({ sessionId }: SessionViewProps) {
 		navUrl: browserView.navState.url,
 	});
 	const filesMaximize = useMaximizeTransition(filesPoppedOut);
-	// The browser deliberately does not animate its maximize. Its content is a
-	// native WebContentsView that cannot be transformed, clipped or tweened, so
-	// any grow/shrink is really a captured bitmap standing in for the page, and
-	// a bitmap cannot match a live view that relayouts at the new size — it
-	// either scales (the page appears to zoom, then snaps back on handoff) or
-	// stays put (the panel grows around it into empty space). The frozen frame
-	// is still used, but only to cover the native view's handoff, which is an
-	// IPC round trip and would otherwise flash. See DESIGN.md's Motion section.
-	const browserPopoutSettleRef = useRef(false);
-	const browserPopoutRequestRef = useRef(0);
-	const currentSessionIdRef = useRef(sessionId);
-	currentSessionIdRef.current = sessionId;
-
 	useLayoutEffect(() => {
-		browserPopoutRequestRef.current += 1;
-		browserPopoutSettleRef.current = false;
+		browserOriginRectRef.current = null;
 		setTerminalTarget({ kind: "worker" });
 		setBrowserPoppedOut(false);
+		setIsBrowserExiting(false);
 		setFilesPoppedOut(false);
 	}, [sessionId]);
 
@@ -240,42 +241,39 @@ export function SessionView({ sessionId }: SessionViewProps) {
 	const handleToggleBrowserPopOut = useCallback(
 		(next: boolean) => {
 			if (next) setFilesPoppedOut(false);
-			const requestId = ++browserPopoutRequestRef.current;
-			const requestSessionId = sessionId;
-			// The frozen frame has to be on screen *before* the layout moves: the
-			// native view is hidden across the move, so flipping first would leave
-			// the panel painting nothing until the capture round trip resolves.
-			// Once the new layout is committed the effect below reveals the live
-			// view and crossfades the frame out.
-			void browserView.beginPopoutTransition().then((captured) => {
-				// Capturing crosses an IPC boundary. If the route changed while it
-				// was pending, this completion belongs to the outgoing session and
-				// must not pop out the incoming session's browser.
-				if (
-					browserPopoutRequestRef.current !== requestId ||
-					currentSessionIdRef.current !== requestSessionId
-				) {
-					return;
+
+			if (next) {
+				const panel = document.querySelector<HTMLElement>('[data-testid="browser-panel"]');
+				const rect = panel?.getBoundingClientRect();
+				if (rect) {
+					browserOriginRectRef.current = {
+						top: rect.top,
+						left: rect.left,
+						width: rect.width,
+						height: rect.height,
+					};
 				}
-				browserPopoutSettleRef.current = captured;
+			}
+
+			if (reduceMotion || !browserOriginRectRef.current) {
 				setBrowserPoppedOut(next);
-			});
+				setIsBrowserExiting(false);
+				return;
+			}
+			if (next) {
+				setBrowserPoppedOut(true);
+				return;
+			}
+			setIsBrowserExiting(true);
 		},
-		[browserView, sessionId],
+		[reduceMotion],
 	);
 
-	// Reveals the native view at the slot's new bounds once React has committed
-	// the maximized/restored layout, and crossfades the frozen frame out over it.
-	// Deliberately not a layout effect: the panel's own slot ref has to be
-	// registered first, and child effects run before this one.
-	useEffect(() => {
-		if (!browserPopoutSettleRef.current) return;
-		browserPopoutSettleRef.current = false;
-		browserView.endPopoutTransition();
-		// Keyed on the layout change alone; browserView is a fresh object each
-		// render and would otherwise re-run this on every unrelated update.
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [browserPoppedOut]);
+	const handleBrowserOverlayAnimationComplete = useCallback(() => {
+		if (!isBrowserExiting) return;
+		setBrowserPoppedOut(false);
+		setIsBrowserExiting(false);
+	}, [isBrowserExiting]);
 
 	// `ao preview` sets session.previewUrl (streamed over CDC); badge the inspector
 	// rail's Browser tab so the user can open it when they choose — we never steal
@@ -463,7 +461,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
 							<div className="h-full min-w-inspector-min">
 								<SessionInspector
 									browserAnnotationQueue={browserAnnotationQueue}
-									browserPoppedOut={browserPoppedOut}
+									browserPoppedOut={browserPoppedOut || isBrowserExiting}
 									filesPoppedOut={filesPoppedOut}
 									filesView={
 										session && !filesPoppedOut ? (
@@ -505,19 +503,43 @@ export function SessionView({ sessionId }: SessionViewProps) {
           portaled to <body> so it escapes the shell layout (covering the
           sidebar + topbar, not just the session area) and sits outside any
           `[data-panel]` column, so the native WebContentsView is not clamped
-          and fills the window below any native titlebar overlay. */}
+          and fills the window. Motion animates real top/left/width/height
+          values from the docked panel's measured rect; it never scale-transforms
+          the browser UI. The native WebContentsView stays live and follows the
+          resizing slot so responsive page content reflows every frame. */}
 			{browserPoppedOut && session
 				? createPortal(
-						<div className="browser-popout-overlay">
+						<motion.div
+							animate={
+								isBrowserExiting && browserOriginRectRef.current
+									? { ...browserOriginRectRef.current, borderRadius: 8 }
+									: {
+											top: 0,
+											left: 0,
+											width: window.innerWidth,
+											height: window.innerHeight,
+											borderRadius: 0,
+										}
+							}
+							className="browser-popout-overlay"
+							initial={
+								browserOriginRectRef.current
+									? { ...browserOriginRectRef.current, borderRadius: 8 }
+									: false
+							}
+							onAnimationComplete={handleBrowserOverlayAnimationComplete}
+							transition={isBrowserExiting ? BROWSER_OVERLAY_EXIT : BROWSER_OVERLAY_ENTER}
+						>
 							<BrowserPanelView
 								active
 								annotationQueue={browserAnnotationQueue}
 								browserView={browserView}
 								onTogglePopOut={handleToggleBrowserPopOut}
 								poppedOut
+								restoring={isBrowserExiting}
 								session={session}
 							/>
-						</div>,
+						</motion.div>,
 						document.body,
 					)
 				: null}

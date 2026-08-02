@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import {
 	ArrowLeft,
 	ArrowRight,
@@ -31,6 +32,7 @@ type BrowserPanelProps = {
 	session: WorkspaceSession;
 	active: boolean;
 	poppedOut: boolean;
+	restoring?: boolean;
 	onTogglePopOut: (next: boolean) => void;
 };
 
@@ -223,7 +225,9 @@ export function BrowserPanelView({
 	onTogglePopOut,
 	browserView,
 	annotationQueue,
+	restoring = false,
 }: BrowserPanelProps & { annotationQueue: BrowserAnnotationQueueModel; browserView: BrowserViewModel }) {
+	const reduceMotion = useReducedMotion();
 	const {
 		viewId,
 		navState,
@@ -277,6 +281,13 @@ export function BrowserPanelView({
 	}, [cancelPicking, enqueue, viewId]);
 
 	const submit = (event: FormEvent<HTMLFormElement>) => {
+		event.preventDefault();
+		const nextURL = urlInput.trim();
+		if (nextURL) void navigate(nextURL);
+	};
+
+	const handleUrlKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+		if (event.key !== "Enter") return;
 		event.preventDefault();
 		const nextURL = urlInput.trim();
 		if (nextURL) void navigate(nextURL);
@@ -447,16 +458,17 @@ export function BrowserPanelView({
 						{agentStatusLabel}
 					</span>
 				) : null}
-					<div className="browser-panel__url-wrap relative min-w-0 flex-1">
-						<Globe2
-							aria-hidden="true"
-							className="browser-panel__url-icon"
-							data-testid="browser-url-icon"
-						/>
+				<div className="browser-panel__url-wrap relative min-w-0 flex-1">
+					<Globe2
+						aria-hidden="true"
+						className="browser-panel__url-icon"
+						data-testid="browser-url-icon"
+					/>
 					<Input
 						aria-label="Browser URL"
 						className="browser-panel__url-input h-browser-url pl-browser-url font-mono text-xs"
 						onChange={(event) => setUrlInput(event.target.value)}
+						onKeyDown={handleUrlKeyDown}
 						placeholder="localhost:5173"
 						value={urlInput}
 					/>
@@ -537,9 +549,19 @@ export function BrowserPanelView({
 					)}
 				</Button>
 			</form>
-			<div
+			<motion.div
+				animate={
+					poppedOut
+						? {
+								margin: restoring ? 8 : 0,
+								borderRadius: restoring ? 8 : 0,
+							}
+						: undefined
+				}
 				className="browser-panel__viewport relative min-h-0 flex-1 overflow-hidden bg-background"
 				data-testid="browser-viewport"
+				initial={poppedOut && !reduceMotion ? { margin: 8, borderRadius: 8 } : false}
+				transition={{ type: "spring", duration: reduceMotion ? 0 : restoring ? 0.32 : 0.42, bounce: 0 }}
 			>
 				<div className="absolute inset-0 min-h-px min-w-px" ref={slotRef} />
 				{mirrorStream ? (
@@ -575,7 +597,7 @@ export function BrowserPanelView({
 						{navState.error}
 					</p>
 				) : null}
-			</div>
+			</motion.div>
 		</div>
 	);
 }

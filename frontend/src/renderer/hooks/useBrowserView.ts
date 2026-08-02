@@ -350,7 +350,11 @@ export function useBrowserView({
 			observerRef.current?.disconnect();
 			slotNodeRef.current = node;
 			if (!node) {
-				sendHiddenBounds();
+				// Defer the hide by one frame. Moving the BrowserPanel between the
+				// inspector and its Motion overlay disconnects the old slot and
+				// connects the new one in the same React commit; hiding immediately
+				// creates a visible blank frame between those ref callbacks.
+				scheduleMeasure();
 				return;
 			}
 			const observer = new ResizeObserver(scheduleMeasure);
@@ -365,7 +369,7 @@ export function useBrowserView({
 			observerRef.current = observer;
 			scheduleMeasure();
 		},
-		[scheduleMeasure, sendHiddenBounds],
+		[scheduleMeasure],
 	);
 
 	useEffect(() => {

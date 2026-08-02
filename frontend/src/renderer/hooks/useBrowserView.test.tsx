@@ -685,7 +685,7 @@ describe("useBrowserView", () => {
 		expect(bridge.destroy).not.toHaveBeenCalled();
 	});
 
-	it("hides the native view synchronously when the browser slot unmounts", async () => {
+	it("hides the native view on the next frame when the browser slot unmounts", async () => {
 		const bridge = setupBridge();
 		const slot = createSlot();
 		const { result } = renderHook(() => useBrowserView({ sessionId: "sess-1", active: true, poppedOut: false }));
@@ -712,11 +712,13 @@ describe("useBrowserView", () => {
 		bridge.setBounds.mockClear();
 		act(() => result.current.slotRef(null));
 
-		expect(bridge.setBounds).toHaveBeenLastCalledWith({
-			viewId: "42:sess-1",
-			rect: { x: 0, y: 0, width: 0, height: 0 },
-			visible: false,
-		});
+		await waitFor(() =>
+			expect(bridge.setBounds).toHaveBeenLastCalledWith({
+				viewId: "42:sess-1",
+				rect: { x: 0, y: 0, width: 0, height: 0 },
+				visible: false,
+			}),
+		);
 	});
 
 	it("parks the view and mirrors frames while a modal dialog is open, then restores it on close", async () => {

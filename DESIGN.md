@@ -60,22 +60,19 @@ resizable`, react-resizable-panels v4 `collapsible` panel + imperative API,
   tweening reflows children like any responsive resize, which suits a vertical
   list of file cards.
 
-  **The Browser panel deliberately does not animate its maximize (2026-07-31).**
-  It was tried and reverted. Its content is a native `WebContentsView`, which
-  Chromium composites above the page and which cannot be transformed, clipped or
-  tweened, so any grow/shrink is really a captured bitmap standing in for the
-  page — and a bitmap cannot agree with a live view that relayouts at the new
-  size. Scaling it to the animating box makes the page appear to zoom and then
-  snap back at the handoff; pinning it at 1x leaves the panel growing into empty
-  space; and because the tween moves real layout, the dense toolbar row relayouts
-  every frame on top of that, which reads as lag. Maximize is now an immediate
-  swap, with the frozen frame kept only to cover the native view's handoff (an
-  IPC round trip that would otherwise flash) and crossfaded out. Do not
-  reintroduce a transition here without solving the native-view problem first.
-  Scoped to the File diff viewer's maximize/restore
-  plus per-file diff expand/collapse (shorter, `--duration-normal ease-out`,
-  plain CSS grid-row animation, no GSAP); everything else in the app keeps the
-  existing minimal-functional motion rules. See _Motion_ below.
+  **Approved divergence (2026-08-02):** the Browser panel now animates
+  maximize/restore with `motion/react`. Motion animates the overlay's real
+  `top`, `left`, `width`, and `height` from the measured docked rect to the
+  viewport and back while the live native `WebContentsView` follows the slot's
+  measured bounds every frame. This lets responsive page content reflow
+  continuously instead of scaling a captured bitmap and snapping at handoff.
+  Do not use transform scaling. Preserve the immediate-swap fallback when
+  reduced motion is requested or the source rect cannot be measured.
+  Scoped to the File diff viewer's maximize/restore, Browser panel
+  maximize/restore, plus per-file diff expand/collapse (shorter,
+  `--duration-normal ease-out`, plain CSS grid-row animation); everything else
+  in the app keeps the existing minimal-functional motion rules. See _Motion_
+  below.
 
 ## Product Context
 
@@ -288,10 +285,11 @@ mirrors the reference exactly. Launching from a project row pre-fills the Projec
   `prefers-reduced-motion`. Scoped to this surface only — do not extend to other
   panels without new approval.
 
-  The Browser panel is explicitly **not** part of this: its maximize is an
-  immediate swap, because a native `WebContentsView` cannot be animated and every
-  bitmap stand-in for it trades one artifact for another. See the hard rule under
-  _Layout & Chrome_ above before adding a transition there.
+  Browser maximize/restore is a separate `motion/react` exception. It animates
+  real overlay geometry (`top`/`left`/`width`/`height`, never transform scale)
+  while the native `WebContentsView` follows the slot's measured bounds and
+  reflows live. Use a zero-bounce spring and preserve the
+  reduced-motion/immediate-swap fallback.
 
 ## Implementation notes
 
@@ -317,3 +315,4 @@ mirrors the reference exactly. Launching from a project row pre-fills the Projec
 | 2026-06-09 | Spawn modal mirrors the reference's Create Task                        | Consistency with the reference; mapped to `ao spawn` params.                                       |
 | 2026-07-31 | File diff viewer gets a FLIP maximize/restore                          | User-requested macOS-window-zoom feel; scoped to that surface, not an app-wide motion pass.        |
 | 2026-07-31 | Browser panel maximize stays instant                                  | Tried and reverted: a native WebContentsView cannot be animated, and every bitmap stand-in for it either zooms the page or grows into empty space, over a tween that relayouts each frame. |
+| 2026-08-02 | Browser panel uses Motion geometry transitions                        | User requested a smoother maximize/restore; animate measured real bounds and resize the live native view every frame, never transform scale. |

@@ -655,8 +655,9 @@ describe("SessionView", () => {
 		// The maximized overlay appears; the terminal stays mounted behind it.
 		expect(await screen.findByRole("button", { name: "browser center" })).toBeInTheDocument();
 		expect(screen.getByText("terminal center")).toBeInTheDocument();
-		// A snapshot is held while the native view moves to its new bounds.
-		expect(beginPopoutTransitionMock).toHaveBeenCalledTimes(1);
+		// Keep the native browser live so responsive content reflows with the
+		// Motion-driven bounds instead of scaling a captured bitmap.
+		expect(beginPopoutTransitionMock).not.toHaveBeenCalled();
 
 		fireEvent.click(screen.getByRole("button", { name: "browser center" }));
 		await waitFor(() =>
@@ -664,8 +665,7 @@ describe("SessionView", () => {
 		);
 		expect(screen.getByText("terminal center")).toBeInTheDocument();
 		expect(browserDestroy).not.toHaveBeenCalled();
-		// Restore also freezes a snapshot for the native-view handoff.
-		expect(beginPopoutTransitionMock).toHaveBeenCalledTimes(2);
+		expect(beginPopoutTransitionMock).not.toHaveBeenCalled();
 	});
 
 	it("does not carry popped-out browser visibility into the next session", () => {
@@ -680,65 +680,14 @@ describe("SessionView", () => {
 		expect(browserViewOptions.current).toMatchObject({ sessionId: "sess-2", active: false });
 	});
 
-	// The frozen frame is what covers the native view through the move, so the
-	// layout must not flip until it is actually on screen — otherwise the panel
-	// paints nothing for the first stretch of the grow and the snapshot pops in
-	// partway through.
-	it("waits for the frozen frame before maximizing the browser", async () => {
-		let releaseCapture: (captured: boolean) => void = () => undefined;
-		beginPopoutTransitionMock.mockReturnValue(
-			new Promise<boolean>((resolve) => {
-				releaseCapture = resolve;
-			}),
-		);
-		act(() => useUiStore.getState().setInspectorOpen("sess-1", true));
-		render(<SessionView sessionId="sess-1" />);
-
-		fireEvent.click(screen.getByRole("button", { name: "pop browser" }));
-
-		expect(beginPopoutTransitionMock).toHaveBeenCalledTimes(1);
-		expect(screen.queryByRole("button", { name: "browser center" })).not.toBeInTheDocument();
-
-		await act(async () => {
-			releaseCapture(true);
-		});
-
-		expect(screen.getByRole("button", { name: "browser center" })).toBeInTheDocument();
-	});
-
-	// With no frame captured there is nothing covering the native view, so the
-	// grow would animate an empty panel. Switch outright instead — still
-	// maximizing, just without the transition.
-	it("still maximizes without animating when no frame could be captured", async () => {
-		beginPopoutTransitionMock.mockResolvedValue(false);
+	it("does not wait for or capture a frozen frame before maximizing", async () => {
 		act(() => useUiStore.getState().setInspectorOpen("sess-1", true));
 		render(<SessionView sessionId="sess-1" />);
 
 		fireEvent.click(screen.getByRole("button", { name: "pop browser" }));
 
 		expect(await screen.findByRole("button", { name: "browser center" })).toBeInTheDocument();
-		expect(screen.getByText("terminal center")).toBeInTheDocument();
-	});
-
-	it("ignores a pending browser popout capture after switching sessions", async () => {
-		let releaseCapture: (captured: boolean) => void = () => undefined;
-		beginPopoutTransitionMock.mockReturnValue(
-			new Promise<boolean>((resolve) => {
-				releaseCapture = resolve;
-			}),
-		);
-		act(() => useUiStore.getState().setInspectorOpen("sess-1", true));
-		const { rerender } = render(<SessionView sessionId="sess-1" />);
-
-		fireEvent.click(screen.getByRole("button", { name: "pop browser" }));
-		rerender(<SessionView sessionId="sess-2" />);
-
-		await act(async () => {
-			releaseCapture(true);
-		});
-
-		expect(screen.queryByRole("button", { name: "browser center" })).not.toBeInTheDocument();
-		expect(screen.getByTestId("session-tab")).toHaveTextContent("do the other thing");
+		expect(beginPopoutTransitionMock).not.toHaveBeenCalled();
 	});
 
 	it("opens the files view in the inspector rail first", () => {
