@@ -17,9 +17,9 @@ const STATUS = {
 } as const;
 
 const columns = [
-	{ id: "working", label: "Pending Work", color: "#60a5fa" },
-	{ id: "staging", label: "Iterating", color: "#a78bfa" },
-	{ id: "in_review", label: "In Review", color: "#facc15" },
+	{ id: "working", label: "Working", color: "#60a5fa" },
+	{ id: "action", label: "Needs you", color: "#fb923c" },
+	{ id: "review", label: "In review", color: "#facc15" },
 	{ id: "merge", label: "Ready to merge", color: "#4ade80" },
 ] as const;
 
@@ -74,7 +74,7 @@ export function FleetBoardDemo() {
 									className="flex h-8 items-center gap-1 border-b border-[var(--preview-border)] px-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--preview-ring)]"
 								>
 									<span
-										className="size-2 shrink-0 rounded-full"
+										className="size-2 shrink-0 rounded-[2px]"
 										style={{ backgroundColor: column.color }}
 									/>
 									<span className="min-w-0 flex-1 truncate text-[10px] font-semibold tracking-[-0.5px] text-[var(--preview-muted-foreground)]">
@@ -129,7 +129,7 @@ function BoardCard({
 		column === 0
 			? { label: status ?? "Working", color: statusColor ?? STATUS.working }
 			: column === 1
-				? { label: "Running checks", color: "#9ca3af" }
+				? { label: "Paused for decision", color: previewStatus.warning }
 				: column === 2
 					? { label: status ?? "Review pending", color: statusColor ?? STATUS.inReview }
 					: { label: "Ready", color: STATUS.ready };
