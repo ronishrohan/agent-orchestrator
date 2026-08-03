@@ -2,6 +2,7 @@
 
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Terminal as XTerm } from "@xterm/xterm";
 
 export type { ActiveDemo } from "./types";
 
@@ -110,75 +111,23 @@ function pickReviewers(): string[] {
 }
 
 const previewTokenStyle = {
-	// Exact dark-theme values from frontend/src/styles/tokens.css (:root).
-	"--preview-background": "oklch(0.185 0.006 285.885)", // --background
-	"--preview-foreground": "oklch(0.985 0 0)", // --foreground
-	"--preview-card": "oklch(0.24 0.008 285.885)", // --card / --surface
-	"--preview-card-foreground": "oklch(0.985 0 0)", // --card-foreground
-	"--preview-primary": "oklch(0.92 0.004 286.32)", // --primary / accent-strong
-	"--preview-primary-foreground": "oklch(0.21 0.006 285.885)", // --primary-foreground
-	"--preview-muted": "oklch(0.274 0.006 286.033)", // --muted / --raised
-	"--preview-muted-foreground": "oklch(0.705 0.015 286.067)", // --muted-foreground
-	"--preview-accent": "oklch(0.274 0.006 286.033)", // --accent / --sidebar-accent
-	"--preview-border": "oklch(1 0 0 / 7%)", // --border
-	"--preview-border-strong": "oklch(1 0 0 / 4%)", // --input / --color-border-strong
-	"--preview-divider": "oklch(1 0 0 / 4%)", // --input / --color-border-strong (column + topbar rules)
-	"--preview-input": "oklch(1 0 0 / 4%)", // --input
-	"--preview-ring": "oklch(0.552 0.016 285.938)", // --ring
-	"--preview-sidebar": "oklch(0.155 0.005 285.823)", // --sidebar
-	"--preview-sidebar-foreground": "oklch(0.985 0 0)", // --sidebar-foreground
-	"--preview-sidebar-accent": "oklch(0.274 0.006 286.033)", // --sidebar-accent
-	"--preview-sidebar-hover": "color-mix(in oklch, oklch(0.985 0 0) 4%, transparent)", // --color-interactive-hover
-	"--preview-sidebar-border": "oklch(1 0 0 / 7%)", // --sidebar-border → --border
-	"--preview-passive": "oklch(0.442 0.017 285.786)", // --chart-3 / --color-text-passive
-	"--preview-raised": "oklch(0.274 0.006 286.033)", // --color-raised → --muted
+	"--preview-background": "oklch(0.153 0.006 107.1)",
+	"--preview-foreground": "oklch(0.988 0.003 106.5)",
+	"--preview-card": "oklch(0.228 0.013 107.4)",
+	"--preview-card-foreground": "oklch(0.988 0.003 106.5)",
+	"--preview-primary": "oklch(0.93 0.007 106.5)",
+	"--preview-primary-foreground": "oklch(0.228 0.013 107.4)",
+	"--preview-muted": "oklch(0.286 0.016 107.4)",
+	"--preview-muted-foreground": "oklch(0.737 0.021 106.9)",
+	"--preview-accent": "oklch(0.286 0.016 107.4)",
+	"--preview-border": "oklch(1 0 0 / 10%)",
+	"--preview-input": "oklch(1 0 0 / 15%)",
+	"--preview-ring": "oklch(0.58 0.031 107.3)",
+	"--preview-sidebar": "oklch(0.228 0.013 107.4)",
+	"--preview-sidebar-foreground": "oklch(0.988 0.003 106.5)",
+	"--preview-sidebar-accent": "oklch(0.286 0.016 107.4)",
+	"--preview-sidebar-border": "oklch(1 0 0 / 10%)",
 } as CSSProperties;
-
-// From --color-status-* in frontend/src/styles/tokens.css
-const STATUS_COLORS = {
-	idle: "oklch(0.705 0.015 286.067)", // --muted-foreground
-	working: "#60a5fa",
-	needsYou: "#fb923c",
-	inReview: "#facc15",
-	ready: "#4ade80",
-	merged: "oklch(0.92 0.004 286.32)", // --primary
-	unknown: "oklch(0.37 0.013 285.805)", // --chart-4
-} as const;
-
-const SIDEBAR_DEFAULT_WIDTH = 218;
-
-const previewAgents = {
-	claude: { agent: "Claude", icon: "/app-icons/agents/claude-code.svg" },
-	codex: { agent: "Codex", icon: "/app-icons/agents/codex.svg" },
-	cursor: { agent: "Cursor", icon: "/app-icons/agents/cursor.svg" },
-	opencode: { agent: "OpenCode", icon: "/app-icons/agents/opencode.svg" },
-	copilot: { agent: "Copilot", icon: "/app-icons/agents/copilot.png" },
-	gemini: { agent: "Gemini", icon: "/app-icons/gemini.svg" },
-	aider: { agent: "Aider", icon: "/app-icons/agents/aider.png" },
-	grok: { agent: "Grok", icon: "/app-icons/agents/grok.png" },
-	devin: { agent: "Devin", icon: "/app-icons/agents/devin.png" },
-	kimi: { agent: "Kimi", icon: "/app-icons/agents/kimi.png" },
-	amp: { agent: "Amp", icon: "/app-icons/agents/amp.svg" },
-	cline: { agent: "Cline", icon: "/app-icons/agents/cline.svg" },
-	goose: { agent: "Goose", icon: "/app-icons/agents/goose.svg" },
-	continue: { agent: "Continue", icon: "/app-icons/agents/continue.png" },
-	pi: { agent: "Pi", icon: "/app-icons/agents/pi.png" },
-	kilocode: { agent: "Kilo Code", icon: "/app-icons/agents/kilocode.svg" },
-} as const;
-
-type PreviewAgentKey = keyof typeof previewAgents;
-
-// Reviewer avatars used on In Review / Ready to merge card boxes.
-const REVIEWERS = {
-	harshit: "https://avatars.githubusercontent.com/u/212377671?v=4&s=36",
-	agent: "https://avatars.githubusercontent.com/u/11289825?v=4&s=36",
-	suraj: "https://avatars.githubusercontent.com/u/96483690?v=4&s=36",
-	ashish: "https://avatars.githubusercontent.com/u/73213873?v=4&s=36",
-	illegal: "https://avatars.githubusercontent.com/u/44542765?v=4&s=36",
-	harsh2: "https://avatars.githubusercontent.com/u/40922251?v=4&s=36",
-	whoisasx: "https://avatars.githubusercontent.com/u/106678504?v=4&s=36",
-	itry: "https://avatars.githubusercontent.com/u/193449657?v=4&s=36",
-} as const;
 
 const columns = [
 	{
@@ -206,10 +155,10 @@ const columns = [
 				icon: "/app-icons/coverage-claude-code.svg",
 				activity: "Editing hero preview",
 				activityState: "running",
-				pr: "draft",
-				checks: "editing",
-				files: "1 file",
-				time: "3m ago",
+				pr: "PR #318",
+				checks: "checks running",
+				files: "7 files",
+				time: "12m ago",
 				badge: null,
 				tone: "default",
 			},
@@ -302,24 +251,10 @@ const columns = [
 		count: 5,
 		cards: [
 			{
-				title: "Verify preview environment variables",
-				branch: "deploy/preview-env",
-				agent: previewAgents.opencode.agent,
-				icon: previewAgents.opencode.icon,
-				activity: "Deployment checks running",
-				activityState: "reviewing",
-				pr: "PR #415",
-				checks: "checks running",
-				files: "2 files",
-				time: "18m ago",
-				badge: "Awaiting review",
-				tone: "review",
-			},
-			{
 				title: "Preload GitHub stars before hydration",
 				branch: "landing/preload-stars",
-				agent: previewAgents.claude.agent,
-				icon: previewAgents.claude.icon,
+				agent: "Claude",
+				icon: "/app-icons/coverage-claude-code.svg",
 				activity: "Checks passed",
 				activityState: "passed",
 				pr: "PR #324",
@@ -374,8 +309,8 @@ const columns = [
 			{
 				title: "Ship AO logo in top navigation",
 				branch: "landing/topbar-ao-logo",
-				agent: previewAgents.claude.agent,
-				icon: previewAgents.claude.icon,
+				agent: "Claude",
+				icon: "/app-icons/coverage-claude-code.svg",
 				activity: "Approved",
 				activityState: "passed",
 				pr: "PR #326",
@@ -436,27 +371,27 @@ const COLUMN_CONFIG: Record<
 const projectItems: TrackItem[] = [
 	{
 		id: "landing",
-		label: "smooth card",
+		label: "Landing preview polish",
 		summary: "Refresh the hero board, topbar, and landing sections without losing the AO product language.",
 	},
 	{
 		id: "deploy",
-		label: "vercel",
+		label: "Vercel deploy config",
 		summary: "Keep framework detection and deploy payloads boring so every preview goes live cleanly.",
 	},
 	{
 		id: "stars",
-		label: "preload",
+		label: "Preload stars and layout metrics",
 		summary: "Move remote counts into server-rendered data so hydration does not shift the hero controls.",
 	},
 	{
 		id: "icons",
-		label: "harness",
+		label: "Harness icon cleanup",
 		summary: "Replace placeholder logos with real harness marks and keep the compatibility showcase readable.",
 	},
 	{
 		id: "footer",
-		label: "footer",
+		label: "Footer and video section QA",
 		summary: "Verify footer grids, demo video placement, and section order across the landing page.",
 	},
 ];
@@ -466,19 +401,17 @@ function previewCard(
 		StaticPreviewCard,
 		"title" | "branch" | "activity" | "activityState" | "pr"
 	> &
-		Partial<StaticPreviewCard> & { agentKey?: PreviewAgentKey },
+		Partial<StaticPreviewCard>,
 ): StaticPreviewCard {
-	const { agentKey = "codex", ...rest } = card;
-	const defaults = previewAgents[agentKey];
 	return {
-		agent: defaults.agent,
-		icon: defaults.icon,
+		agent: "Claude",
 		badge: null,
 		checks: "checks running",
 		files: "2 files",
+		icon: "/app-icons/coverage-claude-code.svg",
 		time: "18m ago",
 		tone: "default",
-		...rest,
+		...card,
 	};
 }
 
@@ -488,13 +421,13 @@ const trackCardTemplates: Record<TrackId, StaticPreviewCard[]> = {
 	),
 	deploy: [
 		previewCard({
-			title: "Document preview alias ownership",
-			branch: "deploy/alias-ownership",
-			activity: "Writing deployment notes",
+			title: "Pin the Vercel monorepo root",
+			branch: "deploy/vercel-root",
+			activity: "Updating project config",
 			activityState: "running",
-			pr: "draft",
-			agentKey: "gemini",
-			time: "18m ago",
+			pr: "PR #411",
+			agent: "Codex",
+			icon: "/app-icons/coverage-codex.svg",
 		}),
 		previewCard({
 			title: "Choose production region failover",
@@ -502,10 +435,8 @@ const trackCardTemplates: Record<TrackId, StaticPreviewCard[]> = {
 			activity: "Waiting for infra decision",
 			activityState: "waiting",
 			pr: "PR #414",
-			agentKey: "grok",
 			badge: "Needs input",
 			tone: "blocked",
-			time: "18m ago",
 		}),
 		previewCard({
 			title: "Verify preview environment variables",
@@ -513,12 +444,10 @@ const trackCardTemplates: Record<TrackId, StaticPreviewCard[]> = {
 			activity: "Deployment checks running",
 			activityState: "reviewing",
 			pr: "PR #415",
-			agentKey: "opencode",
+			agent: "OpenCode",
+			icon: "/app-icons/opencode.svg",
 			badge: "Awaiting review",
 			tone: "review",
-			time: "18m ago",
-			prComments: 0,
-			reviewers: [REVIEWERS.itry, REVIEWERS.agent],
 		}),
 		previewCard({
 			title: "Cache workspace dependencies in builds",
@@ -526,126 +455,126 @@ const trackCardTemplates: Record<TrackId, StaticPreviewCard[]> = {
 			activity: "Production deploy green",
 			activityState: "passed",
 			pr: "PR #409",
-			agentKey: "gemini",
-			badge: null,
+			badge: "Ready",
 			tone: "ready",
-			prComments: 0,
-			reviewers: [REVIEWERS.harshit, REVIEWERS.suraj],
 		}),
 	],
 	stars: [
 		previewCard({
 			title: "Fetch GitHub stars during revalidation",
 			branch: "metrics/server-stars",
-			activity: "Queued",
-			activityState: "passed",
-			pr: "draft",
-			agentKey: "amp",
+			activity: "Adding cached fetch",
+			activityState: "running",
+			pr: "PR #428",
 		}),
 		previewCard({
 			title: "Set the stale count fallback",
 			branch: "metrics/star-fallback",
-			activity: "Queued behind review",
-			activityState: "passed",
+			activity: "Waiting on product copy",
+			activityState: "waiting",
 			pr: "PR #430",
-			agentKey: "cursor",
+			agent: "Cursor",
+			icon: "/app-icons/cursor.svg",
+			badge: "Needs input",
+			tone: "blocked",
 		}),
 		previewCard({
 			title: "Prevent hero metrics hydration shift",
 			branch: "metrics/hydration-layout",
-			activity: "Checks passed",
-			activityState: "passed",
+			activity: "Visual regression review",
+			activityState: "reviewing",
 			pr: "PR #432",
-			agentKey: "continue",
 			badge: "Awaiting review",
 			tone: "review",
-			testResults: { pass: 38, total: 60 },
-			prComments: 3,
-			reviewers: [REVIEWERS.harshit, REVIEWERS.suraj],
 		}),
 		previewCard({
 			title: "Preload the repository avatar",
 			branch: "metrics/avatar-preload",
-			activity: "Approved",
+			activity: "Performance checks passed",
 			activityState: "passed",
 			pr: "PR #426",
-			agentKey: "kimi",
-			badge: null,
+			badge: "Ready",
 			tone: "ready",
-			prComments: 0,
-			reviewers: [REVIEWERS.harshit, REVIEWERS.agent],
 		}),
 	],
 	icons: [
 		previewCard({
 			title: "Replace placeholder harness marks",
 			branch: "icons/harness-marks",
-			activity: "Queued",
-			activityState: "passed",
-			pr: "draft",
-			agentKey: "opencode",
+			activity: "Updating icon assets",
+			activityState: "running",
+			pr: "PR #447",
+			agent: "OpenCode",
+			icon: "/app-icons/opencode.svg",
 		}),
 		previewCard({
 			title: "Pick a fallback for unknown agents",
 			branch: "icons/agent-fallback",
-			activity: "Parked",
-			activityState: "passed",
+			activity: "Waiting for design input",
+			activityState: "waiting",
 			pr: "PR #450",
-			agentKey: "cline",
+			badge: "Needs input",
+			tone: "blocked",
 		}),
 		previewCard({
 			title: "Audit dark-mode logo contrast",
 			branch: "icons/dark-contrast",
-			activity: "Parked",
-			activityState: "passed",
+			activity: "Design review in progress",
+			activityState: "reviewing",
 			pr: "PR #452",
-			agentKey: "cursor",
+			agent: "Cursor",
+			icon: "/app-icons/cursor.svg",
+			badge: "Awaiting review",
+			tone: "review",
 		}),
 		previewCard({
 			title: "Remove stale generated icon imports",
 			branch: "icons/remove-stale-imports",
-			activity: "Approved",
+			activity: "Asset checks passed",
 			activityState: "passed",
 			pr: "PR #444",
-			agentKey: "kilocode",
-			badge: null,
+			badge: "Ready",
 			tone: "ready",
-			prComments: 0,
-			reviewers: [REVIEWERS.suraj, REVIEWERS.whoisasx],
 		}),
 	],
 	footer: [
 		previewCard({
 			title: "Test footer columns at mobile widths",
 			branch: "qa/footer-mobile",
-			activity: "Queued",
-			activityState: "passed",
-			pr: "draft",
-			agentKey: "codex",
+			activity: "Running viewport checks",
+			activityState: "running",
+			pr: "PR #468",
+			agent: "Codex",
+			icon: "/app-icons/coverage-codex.svg",
 		}),
 		previewCard({
 			title: "Confirm final demo video caption",
 			branch: "qa/video-caption",
-			activity: "Parked",
-			activityState: "passed",
+			activity: "Waiting for copy approval",
+			activityState: "waiting",
 			pr: "PR #471",
-			agentKey: "pi",
+			badge: "Needs input",
+			tone: "blocked",
 		}),
 		previewCard({
 			title: "Check section order across routes",
 			branch: "qa/section-order",
-			activity: "Parked",
-			activityState: "passed",
+			activity: "Cross-browser review",
+			activityState: "reviewing",
 			pr: "PR #473",
-			agentKey: "goose",
+			agent: "Cursor",
+			icon: "/app-icons/cursor.svg",
+			badge: "Awaiting review",
+			tone: "review",
 		}),
 		previewCard({
 			title: "Fix footer placeholder row spacing",
 			branch: "qa/footer-spacing",
-			activity: "Done",
+			activity: "Responsive checks passed",
 			activityState: "passed",
 			pr: "PR #465",
-			agentKey: "copilot",
+			badge: "Ready",
+			tone: "ready",
 		}),
 	],
 };
@@ -654,7 +583,8 @@ const landingIncomingCards: StaticPreviewCard[] = [
 	{
 		title: "Tighten hero window border alignment",
 		branch: "landing/window-border-pass",
-		...previewAgents.claude,
+		agent: "Claude",
+		icon: "/app-icons/coverage-claude-code.svg",
 		activity: "Editing file",
 		activityState: "running",
 		pr: "draft",
@@ -667,7 +597,8 @@ const landingIncomingCards: StaticPreviewCard[] = [
 	{
 		title: "Repair mobile overflow on landing preview",
 		branch: "landing/mobile-preview-overflow",
-		...previewAgents.codex,
+		agent: "Codex",
+		icon: "/app-icons/coverage-codex.svg",
 		activity: "Debugging issue",
 		activityState: "running",
 		pr: "draft",
@@ -708,7 +639,8 @@ const landingIncomingCards: StaticPreviewCard[] = [
 	{
 		title: "Shrink card metadata copy for preview scale",
 		branch: "landing/card-density",
-		...previewAgents.cursor,
+		agent: "Cursor",
+		icon: "/app-icons/cursor.svg",
 		activity: "Editing file",
 		activityState: "running",
 		pr: "draft",
@@ -721,7 +653,8 @@ const landingIncomingCards: StaticPreviewCard[] = [
 	{
 		title: "Verify GitHub avatar fallback in project list",
 		branch: "landing/repo-avatar",
-		...previewAgents.aider,
+		agent: "Codex",
+		icon: "/app-icons/coverage-codex.svg",
 		activity: "Running tests",
 		activityState: "running",
 		pr: "draft",
@@ -748,7 +681,8 @@ const landingIncomingCards: StaticPreviewCard[] = [
 	{
 		title: "Replace placeholder project copy with repo-specific tasks",
 		branch: "landing/organic-dummy-data",
-		...previewAgents.goose,
+		agent: "Claude",
+		icon: "/app-icons/coverage-claude-code.svg",
 		activity: "Writing copy",
 		activityState: "running",
 		pr: "draft",
@@ -761,7 +695,8 @@ const landingIncomingCards: StaticPreviewCard[] = [
 	{
 		title: "Smooth card collapse when PRs merge out",
 		branch: "landing/merge-collapse-motion",
-		...previewAgents.cline,
+		agent: "Codex",
+		icon: "/app-icons/coverage-codex.svg",
 		activity: "Debugging issue",
 		activityState: "running",
 		pr: "draft",
@@ -777,26 +712,11 @@ const incomingCardsByTrack: Record<TrackId, StaticPreviewCard[]> = {
 	landing: landingIncomingCards,
 	deploy: [
 		previewCard({
-			title: "Verify preview environment variables",
-			branch: "deploy/preview-env",
-			activity: "Deployment checks running",
-			activityState: "reviewing",
-			pr: "PR #415",
-			agentKey: "opencode",
-			badge: "Awaiting review",
-			tone: "review",
-			time: "18m ago",
-		}),
-		previewCard({
-			title: "Choose production region failover",
-			branch: "deploy/region-failover",
-			activity: "Waiting for infra decision",
-			activityState: "waiting",
-			pr: "PR #414",
-			agentKey: "grok",
-			badge: "Needs input",
-			tone: "blocked",
-			time: "18m ago",
+			title: "Add deploy health-check retries",
+			branch: "deploy/health-retries",
+			activity: "Editing deployment workflow",
+			activityState: "running",
+			pr: "draft",
 		}),
 		previewCard({
 			title: "Document preview alias ownership",
@@ -804,8 +724,6 @@ const incomingCardsByTrack: Record<TrackId, StaticPreviewCard[]> = {
 			activity: "Writing deployment notes",
 			activityState: "running",
 			pr: "draft",
-			agentKey: "gemini",
-			time: "18m ago",
 		}),
 	],
 	stars: [
@@ -815,7 +733,6 @@ const incomingCardsByTrack: Record<TrackId, StaticPreviewCard[]> = {
 			activity: "Instrumenting cache requests",
 			activityState: "running",
 			pr: "draft",
-			agentKey: "kimi",
 		}),
 		previewCard({
 			title: "Test zero-star fallback rendering",
@@ -823,7 +740,6 @@ const incomingCardsByTrack: Record<TrackId, StaticPreviewCard[]> = {
 			activity: "Writing component tests",
 			activityState: "running",
 			pr: "draft",
-			agentKey: "continue",
 		}),
 	],
 	icons: [
@@ -833,7 +749,6 @@ const incomingCardsByTrack: Record<TrackId, StaticPreviewCard[]> = {
 			activity: "Editing SVG assets",
 			activityState: "running",
 			pr: "draft",
-			agentKey: "kilocode",
 		}),
 		previewCard({
 			title: "Add Gemini CLI authorized state",
@@ -841,7 +756,6 @@ const incomingCardsByTrack: Record<TrackId, StaticPreviewCard[]> = {
 			activity: "Updating harness preview",
 			activityState: "running",
 			pr: "draft",
-			agentKey: "gemini",
 		}),
 	],
 	footer: [
@@ -851,7 +765,6 @@ const incomingCardsByTrack: Record<TrackId, StaticPreviewCard[]> = {
 			activity: "Running device checks",
 			activityState: "running",
 			pr: "draft",
-			agentKey: "devin",
 		}),
 		previewCard({
 			title: "Audit footer links and focus order",
@@ -859,17 +772,15 @@ const incomingCardsByTrack: Record<TrackId, StaticPreviewCard[]> = {
 			activity: "Testing keyboard navigation",
 			activityState: "running",
 			pr: "draft",
-			agentKey: "pi",
 		}),
 	],
 };
 
-const BASE_WIDTH = 1140;
+const BASE_WIDTH = 1024;
 const BASE_HEIGHT = 615;
-const WINDOW_ASPECT = BASE_WIDTH / BASE_HEIGHT;
 const WINDOW_MARGIN = 4;
-// Shell can shrink with the hero frame; inner board stays at BASE_* and CSS-scales.
-// Keep the shell aspect-locked so the scaled board fills both axes (no letterbox gaps).
+const MIN_WINDOW_WIDTH = 860;
+const MIN_WINDOW_HEIGHT = 500;
 
 interface WindowState {
 	x: number;
@@ -878,8 +789,24 @@ interface WindowState {
 	height: number;
 }
 
-function sizeFromWidth(width: number): Pick<WindowState, "width" | "height"> {
-	return { width, height: width / WINDOW_ASPECT };
+function clampWindowState(
+	state: WindowState,
+	containerWidth: number,
+	containerHeight: number,
+): WindowState {
+	let { x, y, width, height } = state;
+	const maxWidth = Math.max(1, containerWidth - WINDOW_MARGIN * 2);
+	const maxHeight = Math.max(1, containerHeight - WINDOW_MARGIN * 2);
+	const minWidth = Math.min(MIN_WINDOW_WIDTH, maxWidth);
+	const minHeight = Math.min(MIN_WINDOW_HEIGHT, maxHeight);
+
+	width = Math.max(minWidth, Math.min(width, maxWidth));
+	height = Math.max(minHeight, Math.min(height, maxHeight));
+
+	x = Math.max(WINDOW_MARGIN, Math.min(x, containerWidth - width - WINDOW_MARGIN));
+	y = Math.max(WINDOW_MARGIN, Math.min(y, containerHeight - height - WINDOW_MARGIN));
+
+	return { x, y, width, height };
 }
 
 function createInitialWindowState(
@@ -893,7 +820,8 @@ function createInitialWindowState(
 		availableWidth / BASE_WIDTH,
 		availableHeight / BASE_HEIGHT,
 	);
-	const { width, height } = sizeFromWidth(BASE_WIDTH * scale);
+	const width = BASE_WIDTH * scale;
+	const height = BASE_HEIGHT * scale;
 	return {
 		x: (containerWidth - width) / 2,
 		y: (containerHeight - height) / 2,
@@ -902,16 +830,22 @@ function createInitialWindowState(
 	};
 }
 
-const mockupShellStyle = {
-	...previewTokenStyle,
-	"--mockup-design-w": `${BASE_WIDTH}px`,
-	"--mockup-design-h": `${BASE_HEIGHT}px`,
-} as CSSProperties;
-
 function useFloatingWindow(
 	outerRef: React.RefObject<HTMLElement | null>,
 ) {
 	const stateRef = useRef<WindowState | null>(null);
+	// The geometry the user asked for, kept unclamped by container size. Narrow
+	// containers squash the rendered state into the corner; replaying from this
+	// instead lets a return to a wide viewport restore the original placement.
+	const desiredStateRef = useRef<WindowState | null>(null);
+	const containerSizeRef = useRef({ width: 0, height: 0 });
+	const interactionRef = useRef<{
+		type: "drag" | "resize";
+		direction?: string;
+		startX: number;
+		startY: number;
+		initial: WindowState;
+	} | null>(null);
 
 	const applyState = useCallback(() => {
 		const outer = outerRef.current;
@@ -929,7 +863,17 @@ function useFloatingWindow(
 		const parent = outer?.offsetParent as HTMLElement | null;
 		if (!parent) return;
 		const rect = parent.getBoundingClientRect();
-		stateRef.current = createInitialWindowState(rect.width, rect.height);
+		containerSizeRef.current = { width: rect.width, height: rect.height };
+		// Until the user drags or resizes, the window is laid out by the container,
+		// so re-derive it on every container change instead of clamping the last
+		// render. Clamping alone pins x/y to the margin at narrow widths and never
+		// recovers the centered position when the container grows back.
+		stateRef.current = clampWindowState(
+			desiredStateRef.current ??
+				createInitialWindowState(rect.width, rect.height),
+			rect.width,
+			rect.height,
+		);
 		applyState();
 	}, [applyState, outerRef]);
 
@@ -940,25 +884,179 @@ function useFloatingWindow(
 		if (!parent) return;
 		const observer = new ResizeObserver(updateContainer);
 		observer.observe(parent);
-		window.addEventListener("resize", updateContainer);
-		return () => {
-			observer.disconnect();
-			window.removeEventListener("resize", updateContainer);
-		};
+		return () => observer.disconnect();
 	}, [updateContainer, outerRef]);
+
+	const startDrag = useCallback((clientX: number, clientY: number) => {
+		if (!stateRef.current) return;
+		interactionRef.current = {
+			type: "drag",
+			startX: clientX,
+			startY: clientY,
+			initial: { ...stateRef.current },
+		};
+	}, []);
+
+	const startResize = useCallback(
+		(direction: string, clientX: number, clientY: number) => {
+			if (!stateRef.current) return;
+			interactionRef.current = {
+				type: "resize",
+				direction,
+				startX: clientX,
+				startY: clientY,
+				initial: { ...stateRef.current },
+			};
+		},
+		[],
+	);
+
+	useEffect(() => {
+		const handleMove = (event: PointerEvent) => {
+			const interaction = interactionRef.current;
+			if (!interaction || !stateRef.current) return;
+			const { width: containerWidth, height: containerHeight } =
+				containerSizeRef.current;
+			const dx = event.clientX - interaction.startX;
+			const dy = event.clientY - interaction.startY;
+			let next: WindowState = { ...interaction.initial };
+
+			if (interaction.type === "drag") {
+				next.x = interaction.initial.x + dx;
+				next.y = interaction.initial.y + dy;
+			} else if (interaction.type === "resize" && interaction.direction) {
+				if (interaction.direction.includes("e")) {
+					next.width = interaction.initial.width + dx;
+				}
+				if (interaction.direction.includes("s")) {
+					next.height = interaction.initial.height + dy;
+				}
+				if (interaction.direction.includes("w")) {
+					next.width = interaction.initial.width - dx;
+					next.x = interaction.initial.x + dx;
+				}
+				if (interaction.direction.includes("n")) {
+					next.height = interaction.initial.height - dy;
+					next.y = interaction.initial.y + dy;
+				}
+				if (interaction.direction === "n") {
+					next.width = interaction.initial.width;
+				}
+				if (interaction.direction === "s") {
+					next.width = interaction.initial.width;
+				}
+				if (interaction.direction === "w") {
+					next.height = interaction.initial.height;
+				}
+				if (interaction.direction === "e") {
+					next.height = interaction.initial.height;
+				}
+			}
+
+			next = clampWindowState(next, containerWidth, containerHeight);
+			desiredStateRef.current = next;
+			stateRef.current = next;
+			applyState();
+		};
+
+		const handleUp = () => {
+			interactionRef.current = null;
+		};
+
+		window.addEventListener("pointermove", handleMove);
+		window.addEventListener("pointerup", handleUp);
+		return () => {
+			window.removeEventListener("pointermove", handleMove);
+			window.removeEventListener("pointerup", handleUp);
+		};
+	}, [applyState]);
+
+	return { startDrag, startResize };
+}
+
+function ResizeHandle({
+	className,
+	cursor,
+	direction,
+	onResizeStart,
+}: {
+	className: string;
+	cursor: string;
+	direction: string;
+	onResizeStart: (direction: string, clientX: number, clientY: number) => void;
+}) {
+	return (
+		<div
+			className={`absolute z-20 ${cursor} ${className}`}
+			onPointerDown={(event) => {
+				event.preventDefault();
+				event.stopPropagation();
+				onResizeStart(direction, event.clientX, event.clientY);
+			}}
+		/>
+	);
+}
+
+function ResizeHandles({
+	onResizeStart,
+}: {
+	onResizeStart: (direction: string, clientX: number, clientY: number) => void;
+}) {
+	return (
+		<>
+			<ResizeHandle
+				className="-left-1 -top-1 h-3 w-3"
+				cursor="cursor-nwse-resize"
+				direction="nw"
+				onResizeStart={onResizeStart}
+			/>
+			<ResizeHandle
+				className="-right-1 -top-1 h-3 w-3"
+				cursor="cursor-nesw-resize"
+				direction="ne"
+				onResizeStart={onResizeStart}
+			/>
+			<ResizeHandle
+				className="-left-1 -bottom-1 h-3 w-3"
+				cursor="cursor-nesw-resize"
+				direction="sw"
+				onResizeStart={onResizeStart}
+			/>
+			<ResizeHandle
+				className="-right-1 -bottom-1 h-3 w-3"
+				cursor="cursor-nwse-resize"
+				direction="se"
+				onResizeStart={onResizeStart}
+			/>
+			<ResizeHandle
+				className="left-2 right-2 -top-1 h-2"
+				cursor="cursor-ns-resize"
+				direction="n"
+				onResizeStart={onResizeStart}
+			/>
+			<ResizeHandle
+				className="left-2 right-2 -bottom-1 h-2"
+				cursor="cursor-ns-resize"
+				direction="s"
+				onResizeStart={onResizeStart}
+			/>
+			<ResizeHandle
+				className="-left-1 top-2 bottom-2 w-2"
+				cursor="cursor-ew-resize"
+				direction="w"
+				onResizeStart={onResizeStart}
+			/>
+			<ResizeHandle
+				className="-right-1 top-2 bottom-2 w-2"
+				cursor="cursor-ew-resize"
+				direction="e"
+				onResizeStart={onResizeStart}
+			/>
+		</>
+	);
 }
 
 function createInitialCards(trackId: TrackId): PreviewCard[] {
-	if (trackId === "landing") {
-		return columns.flatMap((column) =>
-			column.cards.map((card, index) => ({
-				...card,
-				column: column.id,
-				id: `${trackId}-${column.id}-${index}`,
-			})),
-		);
-	}
-
 	return columns.flatMap((column, index) => {
 		const card = trackCardTemplates[trackId][index];
 		return card
@@ -975,54 +1073,6 @@ function createInitialCardsByTrack(): Record<TrackId, PreviewCard[]> {
 	return Object.fromEntries(
 		projectItems.map(({ id }) => [id, createInitialCards(id)]),
 	) as Record<TrackId, PreviewCard[]>;
-}
-
-const REVIEWER_LIST = Object.values(REVIEWERS);
-
-function pickRandom<T>(items: T[]): T {
-	return items[Math.floor(Math.random() * items.length)] as T;
-}
-
-function pickStagingActivity(): { activity: string; testResults?: { pass: number; total: number } } {
-	const total = pickRandom([28, 42, 44, 50, 54, 60]);
-	const pass = Math.floor(total * (0.3 + Math.random() * 0.4));
-	const labels: Array<{ activity: string; testResults?: { pass: number; total: number } }> = [
-		{ activity: `${pass}/${total} passed`, testResults: { pass, total } },
-		{ activity: `${pass}/${total} passed`, testResults: { pass, total } },
-		{ activity: "Building...", testResults: undefined },
-		{ activity: "Linting codebase", testResults: undefined },
-		{ activity: "Running CI pipeline", testResults: { pass, total } },
-	];
-	return pickRandom(labels);
-}
-
-function pickReviewers(): string[] {
-	const shuffled = [...REVIEWER_LIST].sort(() => Math.random() - 0.5);
-	return shuffled.slice(0, 1 + Math.floor(Math.random() * 3));
-}
-
-const IN_REVIEW_STATES: Array<{
-	activity: string;
-	activityState: ActivityState;
-	testResults?: { pass: number; total: number };
-}> = [
-	{ activity: "Checks passed", activityState: "passed", testResults: { pass: 38, total: 60 } },
-	{ activity: "Awaiting review", activityState: "reviewing" },
-	{ activity: "Review in progress", activityState: "reviewing", testResults: { pass: 28, total: 28 } },
-	{ activity: "Checks passed", activityState: "passed", testResults: { pass: 16, total: 28 } },
-];
-
-const MERGE_ACTIVITIES = [
-	"Approved",
-	"Ready to land",
-	"LGTM",
-	"All checks passed",
-];
-
-const RELATIVE_TIMES = ["2m ago", "4m ago", "7m ago", "11m ago", "18m ago", "24m ago", "31m ago", "46m ago", "1h ago"];
-
-function randomTime() {
-	return pickRandom(RELATIVE_TIMES);
 }
 
 function advanceCard(card: PreviewCard): PreviewCard {
@@ -1170,38 +1220,22 @@ function SearchIcon({ className = "" }: { className?: string }) {
 	);
 }
 
-function PanelLeftIcon({ className = "" }: { className?: string }) {
+function PinIcon({ className = "" }: { className?: string }) {
 	return (
-		<svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
-			<rect x="2.5" y="2.5" width="11" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
-			<path d="M6.5 3v10" stroke="currentColor" strokeWidth="1.3" />
+		<svg className={className} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+			<path d="M10.8 1.9 14.1 5 12.9 6.2l-.8-.4-2.8 2.8.3 2.2-.8.8-2.7-2.7-2.9 2.9-.8-.8 2.9-2.9-2.7-2.7.8-.8 2.2.3 2.8-2.8-.4-.8 1.8-1.4Z" />
 		</svg>
 	);
 }
 
-function ArrowLeftIcon({ className = "" }: { className?: string }) {
+function FolderIcon({ className = "" }: { className?: string }) {
 	return (
 		<svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
 			<path
-				d="M12.5 8H3.5M7 4.5 3.5 8 7 11.5"
+				d="M2 4.5h4.2l1 1H14v6.2a1.2 1.2 0 0 1-1.2 1.2H3.2A1.2 1.2 0 0 1 2 11.7V4.5Z"
 				stroke="currentColor"
-				strokeLinecap="round"
 				strokeLinejoin="round"
-				strokeWidth="1.3"
-			/>
-		</svg>
-	);
-}
-
-function ArrowRightIcon({ className = "" }: { className?: string }) {
-	return (
-		<svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
-			<path
-				d="M3.5 8h9M9 4.5 12.5 8 9 11.5"
-				stroke="currentColor"
-				strokeLinecap="round"
-				strokeLinejoin="round"
-				strokeWidth="1.3"
+				strokeWidth="1.2"
 			/>
 		</svg>
 	);
@@ -1219,37 +1253,10 @@ function BranchIcon({ className = "" }: { className?: string }) {
 	);
 }
 
-/** Lucide LayoutDashboard — bento tiles used on the real project row. */
-function LayoutGridIcon({ className = "" }: { className?: string }) {
+function GridIcon({ className = "" }: { className?: string }) {
 	return (
 		<svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
-			<rect x="2" y="2" width="5" height="6.5" rx="1" stroke="currentColor" strokeWidth="1.25" />
-			<rect x="9" y="2" width="5" height="3.5" rx="1" stroke="currentColor" strokeWidth="1.25" />
-			<rect x="9" y="7.5" width="5" height="6.5" rx="1" stroke="currentColor" strokeWidth="1.25" />
-			<rect x="2" y="10.5" width="5" height="3.5" rx="1" stroke="currentColor" strokeWidth="1.25" />
-		</svg>
-	);
-}
-
-/** Matches frontend/src/renderer/components/icons.tsx OrchestratorIcon. */
-function OrchestratorIcon({ className = "" }: { className?: string }) {
-	return (
-		<svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-			<circle cx="12" cy="4" r="2" stroke="currentColor" strokeWidth="2" />
-			<circle cx="5" cy="20" r="2" stroke="currentColor" strokeWidth="2" />
-			<circle cx="12" cy="20" r="2" stroke="currentColor" strokeWidth="2" />
-			<circle cx="19" cy="20" r="2" stroke="currentColor" strokeWidth="2" />
-			<path d="M12 6v12M5 11h14M5 11v7M19 11v7" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
-		</svg>
-	);
-}
-
-function MoreVerticalIcon({ className = "" }: { className?: string }) {
-	return (
-		<svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
-			<circle cx="8" cy="3.5" r="1.1" fill="currentColor" />
-			<circle cx="8" cy="8" r="1.1" fill="currentColor" />
-			<circle cx="8" cy="12.5" r="1.1" fill="currentColor" />
+			<path d="M3 3h3v3H3zM10 3h3v3h-3zM3 10h3v3H3zM10 10h3v3h-3z" stroke="currentColor" />
 		</svg>
 	);
 }
@@ -1264,12 +1271,12 @@ function PlusIcon({ className = "" }: { className?: string }) {
 
 function BellIcon({ className = "" }: { className?: string }) {
 	return (
-		<svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+		<svg className={className} viewBox="0 0 20 20" fill="none" aria-hidden="true">
 			<path
-				d="M8 13.75a1.5 1.5 0 0 0 1.5-1.35H6.5A1.5 1.5 0 0 0 8 13.75ZM3.75 11.75h8.5l-.9-1.45V7.1a3.35 3.35 0 0 0-6.7 0v3.2l-.9 1.45Z"
+				d="M10 17.5a2 2 0 0 0 2-1.8H8a2 2 0 0 0 2 1.8ZM4.5 14.8h11l-1.2-1.9V8.5a4.3 4.3 0 0 0-8.6 0v4.4l-1.2 1.9Z"
 				stroke="currentColor"
 				strokeLinejoin="round"
-				strokeWidth="1.25"
+				strokeWidth="1.2"
 			/>
 		</svg>
 	);
@@ -1377,291 +1384,222 @@ function SettingsIcon({ className = "" }: { className?: string }) {
 	);
 }
 
-function PinIcon({ className = "" }: { className?: string }) {
-	return (
-		<svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-			<path
-				d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1z"
-				stroke="currentColor"
-				strokeLinecap="round"
-				strokeLinejoin="round"
-				strokeWidth="1.75"
-			/>
-		</svg>
-	);
-}
-
-function FolderOpenIcon({ className = "" }: { className?: string }) {
-	return (
-		<svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-			<path
-				d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"
-				stroke="currentColor"
-				strokeLinecap="round"
-				strokeLinejoin="round"
-				strokeWidth="1.75"
-			/>
-		</svg>
-	);
-}
-
-function ChevronRightIcon({ className = "", expanded = false }: { className?: string; expanded?: boolean }) {
-	return (
-		<svg
-			className={`${className}${expanded ? " rotate-90" : ""}`}
-			viewBox="0 0 16 16"
-			fill="none"
-			aria-hidden="true"
-		>
-			<path
-				d="M6 3.5 10.5 8 6 12.5"
-				stroke="currentColor"
-				strokeLinecap="round"
-				strokeLinejoin="round"
-				strokeWidth="2"
-			/>
-		</svg>
-	);
-}
-
-function ProjectActionIcon({
-	children,
-	className = "",
+function WindowTitlebar({
+	mergedCount,
+	onNewTask,
+	onTitlebarPointerDown,
+	onViewChange,
+	runningCount,
+	viewMode,
+	waitingCount,
 }: {
-	children: ReactNode;
-	className?: string;
+	mergedCount: number;
+	onNewTask: () => void;
+	onTitlebarPointerDown: (clientX: number, clientY: number) => void;
+	onViewChange: (mode: ViewMode) => void;
+	runningCount: number;
+	viewMode: ViewMode;
+	waitingCount: number;
 }) {
 	return (
-		<span
-			aria-hidden="true"
-			className={`grid size-6 shrink-0 place-items-center text-[var(--preview-passive)] ${className}`}
+		<div
+			className="flex h-10 shrink-0 items-center border-b border-[var(--preview-border)] bg-[var(--preview-background)] px-2 sm:cursor-grab sm:pl-3 sm:pr-1.5 sm:active:cursor-grabbing"
+			onPointerDown={(event) => {
+				if ((event.target as HTMLElement).closest("button")) return;
+				if (!window.matchMedia("(min-width: 640px)").matches) return;
+				event.preventDefault();
+				onTitlebarPointerDown(event.clientX, event.clientY);
+			}}
 		>
-			{children}
-		</span>
-	);
-}
-
-/** Compact sidebar labels for the same tasks shown on the kanban. */
-function sidebarSessionLabel(card: PreviewCard): string {
-	const short: Record<string, string> = {
-		"Tighten hero window border alignment": "window border",
-		"Remove stale generated icon imports": "stale icons",
-		"Document preview alias ownership": "alias ownership",
-		"Confirm whether download labels stay platform-aware": "download labels",
-		"Pick final titlebar metrics for the preview": "titlebar metrics",
-		"Wire hero mockup progression delays": "progression timing",
-		"Verify preview environment variables": "preview env",
-		"Preload GitHub stars before hydration": "preload stars",
-		"Ship AO logo in top navigation": "ao logo",
-		"Choose production region failover": "region failover",
-		"Cache workspace dependencies in builds": "workspace cache",
-		"Repair mobile overflow on landing preview": "mobile overflow",
-		"Shrink card metadata copy for preview scale": "card density",
-		"Verify GitHub avatar fallback in project list": "repo avatar",
-		"Replace placeholder project copy with repo-specific tasks": "organic tasks",
-		"Smooth card collapse when PRs merge out": "merge collapse",
-		"Add rate-limit telemetry for star fetches": "star rate limit",
-		"Test zero-star fallback rendering": "zero-star fallback",
-		"Normalize harness icon viewboxes": "icon viewboxes",
-		"Add Gemini CLI authorized state": "gemini state",
-		"Verify video controls on iOS": "video ios",
-		"Audit footer links and focus order": "footer focus",
-	};
-	return short[card.title] ?? card.title.toLowerCase();
-}
-
-function isPinnedSidebarCard(card: PreviewCard): boolean {
-	return (
-		card.column === "pending" ||
-		card.column === "merge" ||
-		card.tone === "review" ||
-		card.tone === "ready"
-	);
-}
-
-function SidebarSessionRow({
-	active,
-	dotColor,
-	label,
-}: {
-	active?: boolean;
-	dotColor: string;
-	label: string;
-}) {
-	return (
-		<div className="pl-4">
-			<div
-				className={`flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] ${
-					active
-						? "bg-[var(--preview-sidebar-accent)] font-medium text-[var(--preview-foreground)]"
-						: "text-[var(--preview-muted-foreground)]"
-				}`}
-			>
-				<span
-					aria-hidden="true"
-					className="mt-px h-1.5 w-1.5 shrink-0 rounded-full"
-					style={{ backgroundColor: dotColor }}
-				/>
-				<span className="min-w-0 flex-1 truncate">{label}</span>
+			<div className="relative z-50 flex items-center gap-1.5 sm:gap-2">
+				<span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57] sm:h-3 sm:w-3" />
+				<span className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e] sm:h-3 sm:w-3" />
+				<span className="h-2.5 w-2.5 rounded-full bg-[#28c840] sm:h-3 sm:w-3" />
+			</div>
+			<div className="ml-2 flex min-w-0 items-center gap-2 sm:ml-5">
+				<span className="truncate text-[12px] font-bold tracking-[-0.5px] text-[var(--preview-muted-foreground)]">
+					{repoName}
+				</span>
+				<span className="hidden rounded border border-[var(--preview-border)] px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-[var(--preview-muted-foreground)]/70 md:inline">
+					{mergedCount} PRs merged
+				</span>
+				<span className="hidden rounded border border-[var(--preview-border)] px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-[var(--preview-muted-foreground)]/70 lg:inline">
+					{runningCount} agents running
+				</span>
+				<span className="hidden rounded border border-[var(--preview-border)] px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-[var(--preview-muted-foreground)]/70 lg:inline">
+					{waitingCount} waiting
+				</span>
+			</div>
+			<div className="ml-auto flex items-center gap-1.5">
+				<button
+					type="button"
+					onClick={() => onViewChange(viewMode === "orchestrator" ? "board" : "orchestrator")}
+					className={`hidden h-[28px] items-center gap-2 rounded-[6px] border px-3 text-[12px] font-semibold transition-[background-color,border-color,color,transform] active:scale-[0.96] sm:inline-flex ${
+						viewMode === "orchestrator"
+							? "border-[var(--preview-ring)] bg-[var(--preview-muted)] text-[var(--preview-foreground)]"
+							: "border-[var(--preview-border)] text-[var(--preview-muted-foreground)] hover:bg-[var(--preview-muted)]"
+					}`}
+				>
+					<BeakerIcon className="h-4 w-4" />
+					Orchestrator
+				</button>
+				<button
+					type="button"
+					onClick={onNewTask}
+					className="inline-flex h-[28px] items-center gap-2 rounded-[8px] bg-[var(--preview-primary)] px-2 text-[12px] font-semibold text-[var(--preview-primary-foreground)] transition-transform active:scale-[0.96] sm:px-3"
+				>
+					<PlusIcon className="h-4 w-4" />
+					<span className="hidden sm:inline">New task</span>
+				</button>
+				<button
+					type="button"
+					className="hidden h-[28px] w-[28px] place-items-center rounded-[6px] border border-[var(--preview-border)] text-[var(--preview-muted-foreground)] transition-transform active:scale-[0.96] min-[420px]:grid"
+					aria-label="Notifications"
+				>
+					<BellIcon className="h-5 w-5" />
+				</button>
 			</div>
 		</div>
 	);
 }
 
-function Sidebar({ cards }: { cards: PreviewCard[] }) {
-	const activeCards = cards.filter((card) => !card.merging);
-	const pinnedCards = activeCards.filter(isPinnedSidebarCard);
-	const projectCards = activeCards.filter((card) => !isPinnedSidebarCard(card));
+function Sidebar({
+	isRepoAvatarReady,
+	onResizeStart,
+	onSelectTrack,
+	selectedTrackId,
+	sidebarRef,
+}: {
+	isRepoAvatarReady: boolean;
+	onResizeStart: (clientX: number) => void;
+	onSelectTrack: (trackId: TrackId) => void;
+	selectedTrackId: TrackId;
+	sidebarRef: React.RefObject<HTMLElement | null>;
+}) {
 	return (
 		<aside
-			aria-hidden="true"
-			className="pointer-events-none relative flex shrink-0 flex-col bg-[var(--preview-sidebar)] text-[var(--preview-muted-foreground)]"
-			style={{ width: SIDEBAR_DEFAULT_WIDTH }}
+			ref={sidebarRef}
+			className="relative hidden shrink-0 flex-col border-r border-[var(--preview-sidebar-border)] bg-[var(--preview-sidebar)] text-[var(--preview-muted-foreground)] sm:flex"
+			style={{ width: 178 }}
 		>
-			{/* Traffic lights + nav — decorative only; whole sidebar is pointer-events-none. */}
-			<div className="flex h-11 items-center gap-2 px-3">
-				<div className="flex h-6 items-center gap-1.5">
-					<span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#ff5f57]" />
-					<span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#ffbd2e]" />
-					<span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#28c840]" />
-				</div>
-				<span
-					aria-hidden="true"
-					className="grid h-6 w-6 shrink-0 place-items-center text-[var(--preview-passive)]"
-				>
-					<PanelLeftIcon className="h-3.5 w-3.5" />
-				</span>
-				<span
-					aria-hidden="true"
-					className="grid h-6 w-6 shrink-0 place-items-center text-[var(--preview-passive)] opacity-45"
-				>
-					<ArrowLeftIcon className="h-3.5 w-3.5" />
-				</span>
-				<span
-					aria-hidden="true"
-					className="grid h-6 w-6 shrink-0 place-items-center text-[var(--preview-passive)] opacity-45"
-				>
-					<ArrowRightIcon className="h-3.5 w-3.5" />
-				</span>
-			</div>
-
-			{/* Brand left edge lines up with the red traffic light (same px-3). */}
-			<div className="flex shrink-0 items-center gap-1.5 px-3 pb-2 pt-0.5">
+			<div className="flex h-[36px] items-center gap-2 px-3">
 				<img
 					src="/ao-logo.svg"
 					alt=""
-					width={20}
-					height={20}
+					width={18}
+					height={18}
 					aria-hidden="true"
-					className="h-5 w-5 shrink-0 rounded-md"
+					className="h-[18px] w-[18px]"
 					draggable="false"
 				/>
-				<div className="min-w-0 flex-1 truncate text-[12px] font-bold leading-tight tracking-tight text-[var(--preview-sidebar-foreground)]">
+				<div className="min-w-0 flex-1 truncate text-[12px] font-semibold tracking-[-0.5px] text-[var(--preview-sidebar-foreground)]">
 					Agent Orchestrator
 				</div>
 			</div>
 
-			<div className="flex shrink-0 flex-col px-2">
-				<div className="pb-3">
-					<div className="flex h-7 w-full items-center gap-2 rounded-lg bg-[var(--preview-muted)] px-2.5 text-[12px] font-normal text-[var(--preview-muted-foreground)]">
-						<SearchIcon className="h-3 w-3 shrink-0 opacity-80" />
-						<span className="min-w-0 flex-1 truncate leading-none">Search</span>
-					</div>
+			<div className="px-3 pt-2">
+				<div className="flex h-[18px] items-center gap-1.5 text-[9px] text-[var(--preview-muted-foreground)]/70">
+					<SearchIcon className="h-3 w-3" />
+					<span>Search</span>
 				</div>
-
-				{/* Pinned — In Review / Ready cards from the live kanban. */}
-				<div className="flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-[var(--preview-passive)]">
-					<PinIcon className="h-3.5 w-3.5 shrink-0" />
-					<span className="min-w-0 truncate">Pinned</span>
-					<ChevronRightIcon expanded className="h-3 w-3 shrink-0" />
-				</div>
-				<div className="mb-1 ml-2 flex flex-col gap-px">
-					{pinnedCards.map((card) => (
-						<SidebarSessionRow
-							key={card.id}
-							dotColor={cardStatusColor(card)}
-							label={sidebarSessionLabel(card)}
-						/>
-					))}
-				</div>
-
-				{/* Projects — plus only; no disclosure chevron beside it. */}
-				<div className="mb-0.5 flex h-7 w-full items-center gap-1.5 rounded-md px-2 pr-1 text-[12px] font-medium text-[var(--preview-passive)]">
-					<FolderOpenIcon className="h-3.5 w-3.5 shrink-0" />
-					<span className="min-w-0 flex-1 truncate">Projects</span>
-					<span
-						aria-hidden="true"
-						className="grid h-4 w-4 shrink-0 place-items-center text-[var(--preview-passive)]"
-					>
-						<PlusIcon className="h-3.5 w-3.5" />
-					</span>
+				<div className="mt-2 flex h-[18px] items-center gap-1.5 text-[9px] text-[var(--preview-muted-foreground)]/70">
+					<PinIcon className="h-3 w-3" />
+					<span>Pinned</span>
 				</div>
 			</div>
 
-			<div className="flex min-h-0 flex-1 flex-col overflow-hidden px-2">
-				<div className="relative z-20 mb-px shrink-0">
-					{/* Project row — h-9 + action cluster footprint matches real Sidebar. */}
-					<div className="relative flex h-9 w-full items-center gap-2 rounded-lg bg-[var(--preview-sidebar-accent)] px-2 pr-[84px] text-left text-[13px] font-medium text-[var(--preview-foreground)]">
-						<FolderOpenIcon className="h-4 w-4 shrink-0" />
-						<span className="min-w-0 flex-1 truncate">agent-orchestrator</span>
+			<div className="mt-6 space-y-4 px-2.5">
+				<div>
+					<div className="mb-2 flex items-center justify-between px-0.5 text-[9px] font-bold tracking-[-0.5px] text-[var(--preview-muted-foreground)]/70">
+						<span>Projects</span>
+						<span className="text-[13px] font-normal">+</span>
 					</div>
-					<div className="absolute inset-y-0 right-1.5 z-30 flex items-center gap-px">
-						<ProjectActionIcon>
-							<LayoutGridIcon className="h-4 w-4" />
-						</ProjectActionIcon>
-						<ProjectActionIcon>
-							<OrchestratorIcon className="h-4 w-4" />
-						</ProjectActionIcon>
-						<ProjectActionIcon>
-							<MoreVerticalIcon className="h-4 w-4" />
-						</ProjectActionIcon>
-					</div>
-				</div>
-
-				<div className="min-h-0 flex-1 overflow-y-auto py-0.5 scrollbar-hide">
-					<div className="ml-2 flex flex-col gap-px">
-						{projectCards.map((card) => (
-							<SidebarSessionRow
-								key={card.id}
-								dotColor={cardStatusColor(card)}
-								label={sidebarSessionLabel(card)}
+					<div className="flex h-[18px] items-center gap-1.5 text-[10px] text-[var(--preview-foreground)]">
+						<div className="relative h-3.5 w-3.5 shrink-0 overflow-hidden rounded-sm bg-[var(--preview-muted)]">
+							<img
+								src={repoAvatar}
+								alt=""
+								width={14}
+								height={14}
+								aria-hidden="true"
+								loading="eager"
+								decoding="sync"
+								fetchPriority="high"
+								className={`h-3.5 w-3.5 rounded-sm object-cover transition-opacity ${
+									isRepoAvatarReady ? "opacity-100" : "opacity-0"
+								}`}
+								draggable="false"
 							/>
+							{isRepoAvatarReady ? null : (
+								<GitHubIcon className="absolute inset-0 m-auto h-2.5 w-2.5 text-[var(--preview-muted-foreground)]/65" />
+							)}
+						</div>
+						<span className="min-w-0 flex-1 truncate">{repoName}</span>
+						<GridIcon className="h-3.5 w-3.5 text-[var(--preview-muted-foreground)]" />
+						<BranchIcon className="h-3.5 w-3.5 text-[var(--preview-muted-foreground)]" />
+					</div>
+					<div className="mt-0.5 space-y-0 pl-3">
+						{projectItems.map((item) => (
+							<button
+								type="button"
+								key={item.id}
+								onClick={() => onSelectTrack(item.id)}
+								className={`h-[22px] w-full truncate rounded-[4px] px-2 py-1 text-left text-[10px] leading-[14px] transition-colors ${
+									item.id === selectedTrackId
+										? "bg-[var(--preview-sidebar-accent)] text-[var(--preview-sidebar-foreground)]"
+										: "text-[var(--preview-muted-foreground)] hover:bg-[var(--preview-sidebar-accent)] hover:text-[var(--preview-sidebar-foreground)]"
+								}`}
+							>
+								{item.label}
+							</button>
 						))}
 					</div>
 				</div>
 			</div>
 
-			{/* Settings — mb is panel inset (2px) + panel border (1px) so this hairline meets Archive's. */}
-			<div className="mt-auto mb-[3px] flex h-13 shrink-0 items-center border-t border-[var(--preview-border-strong)] px-2">
-				<div className="flex h-full w-full items-center gap-2 px-2 text-[12px] font-medium text-[var(--preview-muted-foreground)]">
-					<SettingsIcon className="h-3.5 w-3.5 shrink-0" />
+			<div className="mt-auto border-t border-[var(--preview-sidebar-border)] px-3 py-3">
+				<div className="flex items-center gap-1.5 text-[11px] text-[var(--preview-muted-foreground)]">
+					<SettingsIcon className="h-3.5 w-3.5" />
 					<span>Settings</span>
 				</div>
+			</div>
+
+			<div
+				className="absolute right-0 top-0 bottom-0 z-10 w-[6px] cursor-col-resize group"
+				onPointerDown={(event) => {
+					event.preventDefault();
+					event.stopPropagation();
+					onResizeStart(event.clientX);
+				}}
+			>
+				<div className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 bg-[var(--preview-muted-foreground)]/0 transition-colors group-hover:bg-[var(--preview-muted-foreground)]/25" />
 			</div>
 		</aside>
 	);
 }
 
-function ArchiveBar({ count }: { count: number }) {
+function Topbar({
+	mergedCount,
+	selectedTrack,
+	viewMode,
+}: {
+	mergedCount: number;
+	selectedTrack: TrackItem;
+	viewMode: ViewMode;
+}) {
 	return (
-		<div className="flex h-13 shrink-0 items-center border-t border-[var(--preview-divider)] px-3">
-			<div className="inline-flex h-full w-full items-center gap-2 text-[11px] text-[var(--preview-muted-foreground)] outline-none">
-				<svg
-					aria-hidden="true"
-					className="h-3 w-3 shrink-0 text-[var(--preview-passive)]"
-					viewBox="0 0 16 16"
-					fill="none"
-				>
-					<path
-						d="M6 4l4 4-4 4"
-						stroke="currentColor"
-						strokeLinecap="round"
-						strokeLinejoin="round"
-						strokeWidth="1.5"
-					/>
-				</svg>
-				<span className="font-mono text-[10px] font-medium uppercase tracking-[0.04em]">Archive</span>
-				<span className="font-mono tabular-nums text-[var(--preview-passive)]">{count}</span>
+		<div className="flex h-[53px] shrink-0 items-center border-b border-[var(--preview-border)] bg-[var(--preview-card)] px-3 sm:px-4">
+			<div className="min-w-0">
+				<div className="truncate text-[12px] font-bold tracking-[-0.5px] text-[var(--preview-muted-foreground)]">
+					{viewMode === "orchestrator" ? "Orchestrator" : "Board"}, {selectedTrack.label.toLowerCase()}
+				</div>
+				<div className="mt-0.5 truncate text-[10px] text-[var(--preview-muted-foreground)]/75 lg:max-w-[420px]">
+					{selectedTrack.summary}
+				</div>
+			</div>
+			<div className="ml-auto hidden grid-cols-2 gap-2 font-mono text-[10px] tabular-nums tracking-[0.5px] text-[var(--preview-muted-foreground)]/75 sm:grid">
+				<span className="rounded border border-[var(--preview-border)] px-2 py-1">CI 2 failed</span>
+				<span className="rounded border border-[var(--preview-border)] px-2 py-1">{mergedCount} Merged</span>
 			</div>
 		</div>
 	);
@@ -1837,7 +1775,7 @@ function BoardCard({
 			}
 			exit={{ opacity: 0, scale: 0.96, y: -8 }}
 			transition={{
-				duration: 0.22,
+				duration: 0.45,
 				ease: [0.22, 1, 0.36, 1],
 				layout: { duration: 0.55, ease: [0.22, 1, 0.36, 1] },
 			}}
@@ -1951,16 +1889,19 @@ function BoardCard({
 	);
 }
 
-// Column chrome + titles from PR #3496.
 function BoardColumn({
 	cards,
 	color,
 	count,
+	onMerge,
+	onOpen,
 	title,
 }: {
 	cards: PreviewCard[];
 	color: string;
 	count: number;
+	onMerge: (id: string) => void;
+	onOpen: (card: PreviewCard) => void;
 	title: string;
 }) {
 	// Sort attention cards ("waiting") to the top of the column. Framer
@@ -2005,11 +1946,218 @@ function BoardColumn({
 	);
 }
 
+function CloseIcon({ className = "" }: { className?: string }) {
+	return (
+		<svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+			<path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" />
+		</svg>
+	);
+}
+
+function AgentTerminalDisplay({ card }: { card: PreviewCard }) {
+	const terminalElementRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		const element = terminalElementRef.current;
+		if (!element) return;
+
+		element.replaceChildren();
+		const getCols = () => Math.max(24, Math.floor(element.clientWidth / 6.8));
+		const cols = getCols();
+		const block = (text: string) => `\x1b[48;2;17;24;39m\x1b[37m ${text.padEnd(cols - 2, " ")} \x1b[0m\r\n`;
+
+		const terminal = new XTerm({
+			allowProposedApi: false,
+			cols,
+			convertEol: true,
+			cursorBlink: false,
+			disableStdin: true,
+			fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+			fontSize: 11,
+			lineHeight: 1.35,
+			rows: 15,
+			scrollback: 0,
+			theme: {
+				background: "oklch(0.153 0.006 107.1)",
+				black: "oklch(0.153 0.006 107.1)",
+				blue: "#93c5fd",
+				brightBlack: "#6b7280",
+				brightBlue: "#bfdbfe",
+				brightGreen: "#bbf7d0",
+				brightYellow: "#fde68a",
+				cursor: "#d1d5db",
+				foreground: "oklch(0.737 0.021 106.9)",
+				green: "#86efac",
+				red: "#fca5a5",
+				white: "#f9fafb",
+				yellow: "#fcd34d",
+			},
+		});
+
+		terminal.open(element);
+		const resizeObserver = new ResizeObserver(() => {
+			terminal.resize(getCols(), 15);
+		});
+		resizeObserver.observe(element);
+		terminal.write(block(card.title.toLowerCase()));
+		terminal.write("I'll inspect the branch, check the current agent output, and keep\r\n");
+		terminal.write("the fix scoped to this worktree.\r\n\r\n");
+		terminal.write("\x1b[36m⏺ Read\x1b[0m(src/app/components/HeroSection/...)\r\n");
+		terminal.write("  \x1b[2m⎿  opened preview component and current task state\x1b[0m\r\n\r\n");
+		terminal.write(`\x1b[36m⏺ Bash\x1b[0m(${card.checks})\r\n`);
+		terminal.write(`  \x1b[2m⎿  ${card.activity.toLowerCase()} · ${card.files.toLowerCase()}\x1b[0m\r\n\r\n`);
+		terminal.write("\x1b[36m⏺ Edit\x1b[0m(agent status surface)\r\n");
+		terminal.write(
+			card.tone === "ready"
+				? "  \x1b[32m⎿  ready to summarize and merge\x1b[0m\r\n\r\n"
+				: "  \x1b[33m⎿  waiting on final agent output\x1b[0m\r\n\r\n",
+		);
+		terminal.write("checking whether this needs a patch, a review reply, or a merge\r\n");
+		const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+		let spinnerIndex = 0;
+		const renderSpinner = () => {
+			const frame = spinnerFrames[spinnerIndex % spinnerFrames.length];
+			spinnerIndex += 1;
+			terminal.write(`\r\x1b[2K\x1b[35m${frame}\x1b[0m Thinking`);
+			terminal.scrollToBottom();
+		};
+		renderSpinner();
+		terminal.scrollToBottom();
+		const spinnerInterval = window.setInterval(renderSpinner, 140);
+
+		return () => {
+			window.clearInterval(spinnerInterval);
+			resizeObserver.disconnect();
+			terminal.dispose();
+		};
+	}, [card]);
+
+	return (
+		<div className="mt-4 overflow-hidden rounded-xl border border-[var(--preview-border)] bg-[var(--preview-background)] p-3">
+			<div
+				ref={terminalElementRef}
+				className="pointer-events-none h-[236px] select-none overflow-hidden [font-feature-settings:'liga'_0] [&_.xterm-viewport]:!overflow-hidden"
+			/>
+		</div>
+	);
+}
+
+function AgentMetaItem({
+	children,
+	Icon,
+}: {
+	children: ReactNode;
+	Icon: (props: { className?: string }) => ReactNode;
+}) {
+	return (
+		<div className="flex min-w-0 items-center gap-2 rounded-lg border border-[var(--preview-border)] bg-[var(--preview-muted)] px-3 py-2 text-[10px] text-[var(--preview-muted-foreground)]">
+			<Icon className="h-3.5 w-3.5 shrink-0 text-[var(--preview-foreground)]" />
+			<span className="truncate">{children}</span>
+		</div>
+	);
+}
+
+function AgentStatusModal({
+	card,
+	onClose,
+}: {
+	card: PreviewCard | null;
+	onClose: () => void;
+}) {
+	return (
+		<AnimatePresence initial={false}>
+			{card ? (
+				<>
+					<motion.div
+						key="agent-status-titlebar-blur"
+						className="absolute inset-x-0 bottom-auto top-0 z-40 h-10 bg-black/35 backdrop-blur-[1px]"
+						initial={{ opacity: 0 }}
+						animate={{ opacity: 1 }}
+						exit={{ opacity: 0 }}
+						transition={{ duration: 0.18, ease: [0.2, 0, 0, 1] }}
+						onClick={onClose}
+					/>
+					<motion.div
+						key="agent-status-overlay"
+						className="absolute inset-x-0 bottom-0 top-10 z-40 grid place-items-center bg-black/35 p-3 backdrop-blur-[1px] sm:p-8"
+						initial={{ opacity: 0 }}
+						animate={{ opacity: 1 }}
+						exit={{ opacity: 0 }}
+						transition={{ duration: 0.18, ease: [0.2, 0, 0, 1] }}
+						onClick={onClose}
+					>
+					<motion.div
+						role="dialog"
+						aria-modal="true"
+						aria-label={`${card.title} agent status`}
+						className="w-full min-w-0 max-w-[520px] rounded-2xl border border-[var(--preview-border)] bg-[var(--preview-card)] p-3 text-[var(--preview-card-foreground)] shadow-[0_24px_80px_rgba(0,0,0,0.45)] outline-none sm:p-4"
+						initial={{ opacity: 0, scale: 0.99 }}
+						animate={{ opacity: 1, scale: 1 }}
+						exit={{ opacity: 0, scale: 0.99 }}
+						transition={{ duration: 0.16, ease: [0.2, 0, 0, 1] }}
+						onClick={(event) => event.stopPropagation()}
+					>
+						<div className="flex items-start gap-3">
+							<img
+								src={card.icon}
+								alt=""
+								width={24}
+								height={24}
+								aria-hidden="true"
+								className="mt-0.5 h-6 w-6"
+								draggable="false"
+							/>
+							<div className="min-w-0 flex-1">
+								<div className="text-[13px] font-semibold tracking-[-0.5px] text-[var(--preview-foreground)]">
+									{card.agent} worker
+								</div>
+								<div className="mt-1 truncate font-mono text-[10px] tabular-nums text-[var(--preview-muted-foreground)]">
+									{card.branch} · {card.pr}
+								</div>
+							</div>
+							<button
+								type="button"
+								onClick={onClose}
+								className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-[var(--preview-muted-foreground)] transition-[background-color,color,transform] hover:bg-[var(--preview-muted)] hover:text-[var(--preview-foreground)] active:scale-[0.96]"
+								aria-label="Close agent status"
+							>
+								<CloseIcon className="h-4 w-4" />
+							</button>
+						</div>
+
+						<div className="mt-4 grid grid-cols-2 gap-2">
+							<AgentMetaItem Icon={BranchIcon}>{card.branch}</AgentMetaItem>
+							<AgentMetaItem Icon={FileIcon}>{card.files} changed</AgentMetaItem>
+							<AgentMetaItem Icon={GitHubIcon}>{card.pr}</AgentMetaItem>
+							<AgentMetaItem
+								Icon={
+									card.activityState === "passed"
+										? CheckIcon
+										: card.activityState === "failed"
+											? WarningIcon
+											: WaitingIcon
+								}
+							>
+								{card.activity}
+							</AgentMetaItem>
+						</div>
+
+						<AgentTerminalDisplay card={card} />
+					</motion.div>
+				</motion.div>
+				</>
+			) : null}
+		</AnimatePresence>
+	);
+}
+
 function OrchestratorView({
 	cards,
+	onNewTask,
 	selectedTrack,
 }: {
 	cards: PreviewCard[];
+	onNewTask: () => void;
 	selectedTrack: TrackItem;
 }) {
 	const activeCards = cards.filter((card) => !card.merging);
@@ -2105,13 +2253,14 @@ function OrchestratorView({
 						</div>
 					))}
 				</div>
-				<span
-					aria-hidden="true"
-					className="mt-4 inline-flex h-8 items-center justify-center gap-2 rounded-[8px] bg-[var(--preview-primary)] px-3 text-[12px] font-semibold text-[var(--preview-primary-foreground)]"
+				<button
+					type="button"
+					onClick={onNewTask}
+					className="mt-4 inline-flex h-8 items-center justify-center gap-2 rounded-[8px] bg-[var(--preview-primary)] px-3 text-[12px] font-semibold text-[var(--preview-primary-foreground)] transition-transform active:scale-[0.96]"
 				>
 					<PlusIcon className="h-4 w-4" />
 					Spawn worker
-				</span>
+				</button>
 			</aside>
 		</div>
 	);
@@ -2126,8 +2275,10 @@ export function AppMockup() {
 		icons: 16,
 		footer: 9,
 	});
-	const selectedTrackId: TrackId = "landing";
-	const viewMode: ViewMode = "board";
+	const [boardVersion, setBoardVersion] = useState(0);
+	const [selectedTrackId, setSelectedTrackId] = useState<TrackId>("landing");
+	const [selectedCard, setSelectedCard] = useState<PreviewCard | null>(null);
+	const [viewMode, setViewMode] = useState<ViewMode>("board");
 	const incomingIndexes = useRef<Record<TrackId, number>>({
 		landing: 0,
 		deploy: 0,
@@ -2141,30 +2292,6 @@ export function AppMockup() {
 	const { startDrag, startResize } = useFloatingWindow(windowRef);
 	const isRepoAvatarReady = useImageReady(repoAvatar);
 	useDecorativeSubtree(windowRef);
-
-	// Keep the board at the design size and scale the whole chrome to the shell.
-	// Shrinking the layout box itself reflows columns and clips Mergeable / Merge.
-	// Shell resize is aspect-locked, so width/BASE_WIDTH fills both axes with no gaps.
-	useLayoutEffect(() => {
-		const outer = windowRef.current;
-		const content = contentRef.current;
-		if (!outer || !content) return;
-
-		const syncScale = () => {
-			const width = outer.clientWidth;
-			if (width <= 0) return;
-			content.style.transform = `scale(${width / BASE_WIDTH})`;
-		};
-
-		syncScale();
-		const observer = new ResizeObserver(syncScale);
-		observer.observe(outer);
-		window.addEventListener("resize", syncScale);
-		return () => {
-			observer.disconnect();
-			window.removeEventListener("resize", syncScale);
-		};
-	}, []);
 
 	const selectedTrack =
 		projectItems.find((item) => item.id === selectedTrackId) ?? projectItems[0];
@@ -2181,6 +2308,28 @@ export function AppMockup() {
 		[],
 	);
 
+	const startSidebarResize = useCallback((clientX: number) => {
+		const startWidth = sidebarWidthRef.current;
+		const startX = clientX;
+
+		const handleMove = (event: PointerEvent) => {
+			const delta = event.clientX - startX;
+			const nextWidth = Math.max(140, Math.min(320, startWidth + delta));
+			sidebarWidthRef.current = nextWidth;
+			if (sidebarRef.current) {
+				sidebarRef.current.style.width = `${nextWidth}px`;
+			}
+		};
+
+		const handleUp = () => {
+			window.removeEventListener("pointermove", handleMove);
+			window.removeEventListener("pointerup", handleUp);
+		};
+
+		window.addEventListener("pointermove", handleMove);
+		window.addEventListener("pointerup", handleUp);
+	}, []);
+
 	const mergeCard = useCallback((id: string) => {
 		const trackId = selectedTrackId;
 		updateTrackCards(trackId, (current) =>
@@ -2193,7 +2342,7 @@ export function AppMockup() {
 				...current,
 				[trackId]: current[trackId] + 1,
 			}));
-		}, 240);
+		}, 520);
 	}, [selectedTrackId, updateTrackCards]);
 
 	const spawnRandomTask = useCallback(() => {
@@ -2338,7 +2487,6 @@ export function AppMockup() {
 								{
 									...template,
 									column: "working",
-									activityState: "running",
 									id: `${trackId}-incoming-${incomingIndexes.current[trackId]}`,
 								},
 								...next,
@@ -2355,7 +2503,7 @@ export function AppMockup() {
 
 		scheduleNext();
 		return () => window.clearTimeout(timeoutId);
-	}, [mergeCard, selectedTrackId, updateTrackCards]);
+	}, [mergeCard, selectedCardId, selectedTrackId, updateTrackCards]);
 
 	const runningCount = cards.filter((card) => card.column === "working").length;
 	// Waiting is now column-agnostic: any card with activityState "waiting"
@@ -2450,6 +2598,15 @@ export function AppMockup() {
 					</div>
 				</div>
 			</div>
+			<AgentStatusModal
+				card={selectedCard}
+				onClose={() => setSelectedCard(null)}
+			/>
+			{selectedCard ? null : (
+				<div className="hidden sm:contents">
+					<ResizeHandles onResizeStart={startResize} />
+				</div>
+			)}
 		</div>
 	);
 }

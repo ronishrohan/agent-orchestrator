@@ -17,10 +17,10 @@ const STATUS = {
 } as const;
 
 const columns = [
-	{ id: "working", label: "Working", color: "#60a5fa" },
-	{ id: "action", label: "Needs you", color: "#fb923c" },
-	{ id: "review", label: "In review", color: "#facc15" },
-	{ id: "merge", label: "Ready to merge", color: "#4ade80" },
+	{ id: "working", label: "Idle / Working", color: STATUS.working, split: true },
+	{ id: "action", label: "Needs you", color: STATUS.needsYou, split: false },
+	{ id: "review", label: "In review", color: STATUS.inReview, split: false },
+	{ id: "merge", label: "Ready to merge / Merged", color: STATUS.ready, split: true },
 ] as const;
 
 const cards = [
@@ -73,15 +73,38 @@ export function FleetBoardDemo() {
 									onClick={() => setMovingColumn(columnIndex)}
 									className="flex h-8 items-center gap-1 border-b border-[var(--preview-border)] px-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--preview-ring)]"
 								>
-									<span
-										className="size-2 shrink-0 rounded-[2px]"
-										style={{ backgroundColor: column.color }}
-									/>
-									<span className="min-w-0 flex-1 truncate text-[10px] font-semibold tracking-[-0.5px] text-[var(--preview-muted-foreground)]">
-										{column.label}
-									</span>
-									<span className="text-[10px] tabular-nums text-[var(--preview-muted-foreground)]">
-										{count}
+									{column.split ? (
+										<div className="min-w-0 flex-1 overflow-hidden text-[7px] font-semibold uppercase leading-none tracking-normal">
+											<span className="whitespace-nowrap">
+												{column.id === "working" ? (
+													<>
+														<span style={{ color: STATUS.idle }}>Idle</span>
+														<span className="text-[var(--preview-muted-foreground)]"> / </span>
+														<span style={{ color: STATUS.working }}>Working</span>
+													</>
+												) : (
+													<>
+														<span style={{ color: STATUS.ready }}>Ready to merge</span>
+														<span className="text-[var(--preview-muted-foreground)]"> / </span>
+														<span style={{ color: STATUS.merged }}>Merged</span>
+													</>
+												)}
+											</span>
+										</div>
+									) : (
+										<span
+											className="min-w-0 flex-1 overflow-hidden whitespace-nowrap text-[7px] font-semibold uppercase leading-none tracking-normal"
+											style={{ color: column.color }}
+										>
+											{column.label}
+										</span>
+									)}
+									<span className="shrink-0 font-mono text-[7px] tabular-nums leading-none text-[var(--preview-muted-foreground)]">
+										{column.split && column.id === "working"
+											? `${movingColumn === columnIndex ? 0 : columnCards.filter((c) => c.status === "Idle").length} / ${movingColumn === columnIndex ? 1 : columnCards.filter((c) => c.status !== "Idle").length}`
+											: column.split
+												? `${count} / 0`
+												: count}
 									</span>
 								</button>
 
@@ -129,7 +152,7 @@ function BoardCard({
 		column === 0
 			? { label: status ?? "Working", color: statusColor ?? STATUS.working }
 			: column === 1
-				? { label: "Paused for decision", color: previewStatus.warning }
+				? { label: "Input needed", color: STATUS.needsYou }
 				: column === 2
 					? { label: status ?? "Review pending", color: statusColor ?? STATUS.inReview }
 					: { label: "Ready", color: STATUS.ready };
