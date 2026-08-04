@@ -5,7 +5,6 @@ import {
 	ChevronRight,
 	Folder,
 	FolderOpen,
-	LayoutDashboard,
 	MoreVertical,
 	Pencil,
 	Pin,
@@ -30,6 +29,7 @@ import { useCommandPaletteEnabled } from "../hooks/useCommandPaletteEnabled";
 import { workspaceQueryKey } from "../hooks/useWorkspaceQuery";
 import { spawnOrchestrator } from "../lib/spawn-orchestrator";
 import { renameSession } from "../lib/rename-session";
+import { killSession } from "../lib/kill-session";
 import { useResizable } from "../hooks/useResizable";
 import { useShellMaybe } from "../lib/shell-context";
 import { useUpdateStatus } from "../hooks/useUpdateStatus";
@@ -71,11 +71,11 @@ import { isMacPlatform } from "../lib/platform";
 const isMac = isMacPlatform();
 const noDragStyle = isMac ? ({ WebkitAppRegion: "no-drag" } as React.CSSProperties) : undefined;
 
-// Shared styling for the per-project hover action buttons (dashboard,
-// orchestrator, kebab): a 20px square icon button that tints on hover, matching
-// the old SidebarMenuAction footprint.
+// Shared styling for the per-project hover action buttons (orchestrator, kebab):
+// a 20px square icon button that tints on hover, matching the old
+// SidebarMenuAction footprint. No background on hover — icon highlight only.
 const HOVER_ACTION_CLASS =
-	"grid size-5 shrink-0 place-items-center rounded-md text-passive transition-colors hover:bg-interactive-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=open]:bg-interactive-hover data-[state=open]:text-foreground [&_svg]:size-icon-lg";
+	"grid size-5 shrink-0 place-items-center rounded-md text-passive transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=open]:text-foreground [&_svg]:size-icon-lg";
 
 // Shared nav-row chrome (Codex-style): inset pill hover/selected, 14px type, no accent bar.
 const NAV_ROW_CLASS =
@@ -554,6 +554,8 @@ function ProjectItem({
 
 	return (
 		<SidebarMenuItem className="group-data-[collapsible=icon]:mb-0">
+			{/* Scale wrapper so folder icon, main button, and action cluster press together */}
+			<div className="relative transition-[transform] duration-[100ms] ease-out active:scale-[0.98]">
 			{/* project-sidebar__proj-row */}
 			<SidebarMenuButton
 				aria-current={dashboardActive ? "page" : undefined}
@@ -563,8 +565,8 @@ function ProjectItem({
 				tooltip={workspace.name}
 				className={cn(
 					NAV_ROW_CLASS,
-					// Always reserve room for the action cluster (dashboard,
-					// orchestrator, kebab) — icons are always visible, not hover-gated.
+					// Always reserve room for the action cluster (orchestrator, kebab) —
+					// icons are always visible, not hover-gated.
 					"pr-sidebar-project-actions [&_svg]:size-icon-md",
 					// Icon rail: the old 36px letter tile.
 					"group-data-[collapsible=icon]:size-control-board! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:rounded-lg group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:font-semibold",
@@ -590,30 +592,16 @@ function ProjectItem({
 					{workspace.name}
 				</span>
 			</SidebarMenuButton>
-			{/* Per-project actions: dashboard board, orchestrator, and a kebab
-			menu. Always visible (not hover-gated) to avoid CSS :hover group
-			propagation issues in Electron's Chromium. Hidden in the icon rail. */}
+			{/* Per-project actions: orchestrator and kebab menu. Always visible
+			(not hover-gated) to avoid CSS :hover group propagation issues in
+			Electron's Chromium. Hidden in the icon rail. */}
 			<div
 				className={cn(
-					"sidebar-expanded-chrome absolute top-0 right-0.5 z-chrome flex h-9 items-center gap-px",
+					"sidebar-expanded-chrome absolute top-0 right-0.5 z-chrome flex h-control-form items-center gap-px",
 					"group-data-[collapsible=icon]:hidden",
 				)}
 				data-project-actions=""
 			>
-				<Tooltip>
-					<TooltipTrigger asChild>
-						<button
-							aria-current={dashboardActive ? "page" : undefined}
-							aria-label={t("shell.openProjectDashboard", { name: workspace.name })}
-							className={cn(HOVER_ACTION_CLASS, dashboardActive && "text-foreground")}
-							onClick={() => selection.goProject(workspace.id)}
-							type="button"
-						>
-							<LayoutDashboard aria-hidden="true" strokeWidth={dashboardActive ? 2.5 : 2} />
-						</button>
-					</TooltipTrigger>
-					<TooltipContent>{t("shell.dashboard")}</TooltipContent>
-				</Tooltip>
 				<Tooltip>
 					<TooltipTrigger asChild>
 						<button
@@ -669,6 +657,7 @@ function ProjectItem({
 					</DropdownMenuContent>
 				</DropdownMenu>
 			</div>
+			</div>{/* end scale wrapper */}
 			{isRemoving ? (
 				<div className="sidebar-expanded-chrome px-5 py-1 text-2xs text-muted-foreground" role="status">
 						{t("shell.removingNamed", { name: workspace.name })}
@@ -720,9 +709,22 @@ function SessionRow({ session, active, onOpen }: { session: WorkspaceSession; ac
 	const queryClient = useQueryClient();
 	const [isEditing, setIsEditing] = useState(false);
 	const [draft, setDraft] = useState(session.title);
+	const [isKilling, setIsKilling] = useState(false);
 	// Escape must not be swallowed by the blur-to-save path: the keydown handler
 	// blurs the input, so it flags a cancel here for onBlur to honour.
 	const cancelledRef = useRef(false);
+
+	const handleKill = async () => {
+		setIsKilling(true);
+		try {
+			await killSession(session.id);
+			await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
+		} catch (err) {
+			console.error("Failed to kill session:", err);
+		} finally {
+			setIsKilling(false);
+		}
+	};
 
 	const startEditing = () => {
 		setDraft(session.title);
@@ -778,6 +780,7 @@ function SessionRow({ session, active, onOpen }: { session: WorkspaceSession; ac
 
 	return (
 		<SidebarMenuSubItem className="pl-4.5">
+			<div className="transition-[transform] duration-[100ms] ease-out active:scale-[0.97]">
 			<div
 				className={cn(
 					"group/session-row flex h-8 w-full items-center rounded-lg transition-[background-color,color]",
@@ -805,23 +808,37 @@ function SessionRow({ session, active, onOpen }: { session: WorkspaceSession; ac
 						</span>
 					</span>
 				</button>
-				{/* Match terminal-tab close behavior: consume no width at rest, then
-				    expand beside the label on hover/focus so the text yields only when
-				    the action is useful. Keep it a sibling for valid interactive HTML. */}
+				{/* Rename and kill: consume no width at rest, expand on hover/focus.
+				    Keep as siblings for valid interactive HTML. */}
 				<button
 					aria-label={t("shell.renameSession", { title: session.title })}
 					className={cn(
 						"grid h-5 w-0 shrink-0 place-items-center overflow-hidden rounded-md text-passive opacity-0",
-						"transition-[width,margin,background-color,color,opacity] hover:bg-interactive-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent/50 [&_svg]:size-3!",
-						"group-hover/session-row:mr-1 group-hover/session-row:w-5 group-hover/session-row:opacity-100",
-						"group-focus-within/session-row:mr-1 group-focus-within/session-row:w-5 group-focus-within/session-row:opacity-100",
+						"transition-[width,margin,background-color,color,opacity] hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent/50 [&_svg]:size-3!",
+						"group-hover/session-row:mr-0.5 group-hover/session-row:w-5 group-hover/session-row:opacity-100",
+						"group-focus-within/session-row:mr-0.5 group-focus-within/session-row:w-5 group-focus-within/session-row:opacity-100",
 					)}
 					onClick={startEditing}
 					type="button"
 				>
 					<Pencil aria-hidden="true" />
 				</button>
+				<button
+					aria-label={t("shell.killSession")}
+					className={cn(
+						"grid h-5 w-0 shrink-0 place-items-center overflow-hidden rounded-md text-passive opacity-0",
+						"transition-[width,margin,background-color,color,opacity] hover:text-destructive focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent/50 [&_svg]:size-3!",
+						"group-hover/session-row:mr-1 group-hover/session-row:w-5 group-hover/session-row:opacity-100",
+						"group-focus-within/session-row:mr-1 group-focus-within/session-row:w-5 group-focus-within/session-row:opacity-100",
+					)}
+					disabled={isKilling}
+					onClick={() => void handleKill()}
+					type="button"
+				>
+					<Trash2 aria-hidden="true" />
+				</button>
 			</div>
+			</div>{/* end scale wrapper */}
 		</SidebarMenuSubItem>
 	);
 }

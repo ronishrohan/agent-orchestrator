@@ -401,22 +401,11 @@ describe("Sidebar", () => {
 		expect(await screen.findByRole("dialog", { name: "Import to Agent Orchestrator" })).toBeInTheDocument();
 	});
 
-	it("reveals dashboard and orchestrator buttons alongside the kebab on the project row", () => {
+	it("reveals orchestrator and kebab buttons on the project row", () => {
 		renderSidebar();
 
-		expect(screen.getByLabelText("Open Project One dashboard")).toBeInTheDocument();
 		expect(screen.getByLabelText("Spawn Project One orchestrator")).toBeInTheDocument();
 		expect(screen.getByLabelText("Project actions for Project One")).toBeInTheDocument();
-	});
-
-	it("emphasizes the dashboard icon on the project board", () => {
-		mockParams.projectId = workspace.id;
-		renderSidebar();
-
-		const dashboard = screen.getByLabelText("Open Project One dashboard");
-		expect(dashboard).toHaveAttribute("aria-current", "page");
-		expect(dashboard).toHaveClass("text-foreground");
-		expect(screen.getByLabelText("Spawn Project One orchestrator")).not.toHaveAttribute("aria-current");
 	});
 
 	it("keeps the project pill active while its orchestrator session is open", () => {
@@ -430,7 +419,6 @@ describe("Sidebar", () => {
 		const orchestratorButton = screen.getByLabelText("Open Project One orchestrator");
 		expect(orchestratorButton).toHaveAttribute("aria-current", "page");
 		expect(orchestratorButton).toHaveClass("text-foreground");
-		expect(screen.getByLabelText("Open Project One dashboard")).not.toHaveAttribute("aria-current");
 	});
 
 	it("toggles project sessions from the folder icon without selecting the project first", async () => {
@@ -458,11 +446,13 @@ describe("Sidebar", () => {
 		expect(navigateMock).not.toHaveBeenCalled();
 	});
 
-	it("navigates to the project board when the dashboard button is clicked", async () => {
+	it("navigates to the project board when the project name is clicked", async () => {
 		const user = userEvent.setup();
 		renderSidebar();
 
-		await user.click(screen.getByLabelText("Open Project One dashboard"));
+		const projectButton = screen.getByText("Project One").closest("button");
+		expect(projectButton).toBeTruthy();
+		await user.click(projectButton!);
 
 		expect(navigateMock).toHaveBeenCalledWith({ to: "/projects/$projectId", params: { projectId: "proj-1" } });
 	});
@@ -1004,6 +994,7 @@ describe("Sidebar", () => {
 			"group-hover/session-row:opacity-100",
 			"group-focus-within/session-row:w-5",
 		);
+		expect(screen.getByLabelText("Kill session")).toBeInTheDocument();
 		expect(renameButton).toHaveClass("[&_svg]:size-3!");
 		await waitFor(() => expect(updateStatusMock).toHaveBeenCalled());
 	});
@@ -1042,7 +1033,7 @@ describe("Sidebar", () => {
 		expect(projectRow).toHaveClass("pr-sidebar-project-actions");
 		expect(actionCluster).toHaveAttribute("data-project-actions");
 		expect(actionCluster).toHaveClass("right-0.5", "gap-px");
-		expect(within(actionCluster as HTMLElement).getAllByRole("button")).toHaveLength(3);
+		expect(within(actionCluster as HTMLElement).getAllByRole("button")).toHaveLength(2);
 		expect(screen.getByLabelText("Project actions for Project One")).not.toHaveClass("opacity-0");
 	});
 
