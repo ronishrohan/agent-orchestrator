@@ -86,6 +86,13 @@ func addAllTempIndexArgs(worktree string) []string {
 	return []string{"-C", worktree, "add", "-A"}
 }
 
+// readTreeHeadArgs populates the temporary index from HEAD so git recognizes
+// files that are tracked in HEAD even when they match a .gitignore pattern.
+// GIT_INDEX_FILE must be set in the command's environment before calling.
+func readTreeHeadArgs(worktree string) []string {
+	return []string{"-C", worktree, "read-tree", "HEAD"}
+}
+
 // writeTreeArgs flushes the temp index into a tree object and prints the SHA.
 // GIT_INDEX_FILE must be set in the command's environment.
 func writeTreeArgs(worktree string) []string {

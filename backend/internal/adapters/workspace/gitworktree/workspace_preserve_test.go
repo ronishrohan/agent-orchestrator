@@ -39,17 +39,30 @@ func TestWorkspaceIntegrationStashApplyRoundTrip(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	// Stage 1: create a .gitignore that covers a secret file.
-	if err := os.WriteFile(filepath.Join(info.Path, ".gitignore"), []byte("secret.txt\n"), 0o644); err != nil {
+	// Stage 1: commit a config file, then add it to .gitignore. It remains
+	// tracked in HEAD even though it matches the ignore pattern.
+	if err := os.WriteFile(filepath.Join(info.Path, "config.yaml"), []byte("base: true\n"), 0o644); err != nil {
+		t.Fatalf("write config.yaml: %v", err)
+	}
+	runGit(t, git, info.Path, "add", "config.yaml")
+	runGit(t, git, info.Path, "commit", "-m", "add tracked config")
+
+	// Stage 2: create a .gitignore that covers both the tracked config and a
+	// genuinely untracked secret file.
+	if err := os.WriteFile(filepath.Join(info.Path, ".gitignore"), []byte("config.yaml\nsecret.txt\n"), 0o644); err != nil {
 		t.Fatalf("write .gitignore: %v", err)
 	}
 	runGit(t, git, info.Path, "add", ".gitignore")
 	runGit(t, git, info.Path, "commit", "-m", "add gitignore")
 
-	// Stage 2: create uncommitted work:
+	// Stage 3: create uncommitted work:
 	//   - tracked-file edit: modify README.md (already committed from seed)
 	if err := os.WriteFile(filepath.Join(info.Path, "README.md"), []byte("edited by agent\n"), 0o644); err != nil {
 		t.Fatalf("write README: %v", err)
+	}
+	//   - tracked-but-ignored edit: must be captured despite .gitignore
+	if err := os.WriteFile(filepath.Join(info.Path, "config.yaml"), []byte("base: false\n"), 0o644); err != nil {
+		t.Fatalf("edit config.yaml: %v", err)
 	}
 	//   - new non-ignored file: should be captured
 	if err := os.WriteFile(filepath.Join(info.Path, "agent-work.go"), []byte("package main\n"), 0o644); err != nil {
@@ -101,6 +114,15 @@ func TestWorkspaceIntegrationStashApplyRoundTrip(t *testing.T) {
 	}
 	if string(readmeBytes) != "edited by agent\n" {
 		t.Fatalf("README content = %q, want %q", string(readmeBytes), "edited by agent\n")
+	}
+
+	// A tracked file must remain preserved even when it matches .gitignore.
+	configBytes, err := os.ReadFile(filepath.Join(restored.Path, "config.yaml"))
+	if err != nil {
+		t.Fatalf("read config.yaml after apply: %v", err)
+	}
+	if string(configBytes) != "base: false\n" {
+		t.Fatalf("config.yaml content = %q, want %q", string(configBytes), "base: false\n")
 	}
 
 	// New non-ignored file must reappear.

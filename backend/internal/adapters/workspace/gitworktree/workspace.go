@@ -1089,6 +1089,14 @@ func (w *Workspace) StashUncommitted(ctx context.Context, info ports.WorkspaceIn
 		)
 	}
 
+	// Resolve HEAD before building the temporary index. An unborn HEAD has no
+	// tree to seed and intentionally keeps the pre-existing behavior below.
+	headOut, headErr := w.run(ctx, w.binary, revParseHeadArgs(path)...)
+	headSHA := ""
+	if headErr == nil {
+		headSHA = strings.TrimSpace(string(headOut))
+	}
+
 	// Reserve a unique path for the temp index in the system temp dir (not ~/.ao).
 	// We must NOT pre-create the file: git requires GIT_INDEX_FILE to either not
 	// exist (it creates it) or be a valid git index. os.CreateTemp gives us a
@@ -1103,6 +1111,18 @@ func (w *Workspace) StashUncommitted(ctx context.Context, info ports.WorkspaceIn
 	_ = os.Remove(tmpIdxPath)
 	// Deferred remove is a best-effort cleanup in case git leaves the file.
 	defer func() { _ = os.Remove(tmpIdxPath) }()
+
+	// Seed the temporary index from HEAD so git's ignore checks know which
+	// paths are already tracked. Without this, a tracked file that also matches
+	// .gitignore is incorrectly treated as an ignored untracked file and omitted
+	// from the preserve tree.
+	if headSHA != "" {
+		readTreeCmd := aoprocess.CommandContext(ctx, w.binary, readTreeHeadArgs(path)...)
+		readTreeCmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+tmpIdxPath)
+		if out, err := readTreeCmd.CombinedOutput(); err != nil {
+			return "", commandError{args: append([]string{w.binary}, readTreeHeadArgs(path)...), output: string(out), err: err}
+		}
+	}
 
 	// Stage all tracked and non-ignored untracked files into the temp index.
 	// GIT_INDEX_FILE overrides the index so the real index is never touched.
@@ -1120,15 +1140,6 @@ func (w *Workspace) StashUncommitted(ctx context.Context, info ports.WorkspaceIn
 		return "", commandError{args: append([]string{w.binary}, writeTreeArgs(path)...), output: string(treeOut), err: err}
 	}
 	treeSHA := strings.TrimSpace(string(treeOut))
-
-	// Resolve HEAD. An unborn HEAD (no commits yet) means we omit the -p flag
-	// from commit-tree so the preserve commit has no parent.
-	headOut, headErr := w.run(ctx, w.binary, revParseHeadArgs(path)...)
-	headSHA := ""
-	if headErr == nil {
-		headSHA = strings.TrimSpace(string(headOut))
-	}
-	// headErr != nil means unborn HEAD: headSHA stays empty, commit-tree gets no -p.
 
 	// If the preserve tree SHA equals HEAD's tree SHA the working tree is
 	// effectively clean from git's perspective (only ignored files differ).
